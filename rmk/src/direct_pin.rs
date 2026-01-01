@@ -8,7 +8,35 @@ use crate::MatrixTrait;
 use crate::debounce::{DebounceState, DebouncerTrait};
 use crate::event::{Event, KeyboardEvent};
 use crate::input_device::InputDevice;
+use crate::input_device::piso_shift_reg::SharedPisoShiftReg;
 use crate::matrix::KeyState;
+
+/// Hook called once per full scan before reading pins.
+pub trait PreScanHook {
+    async fn pre_scan(&mut self);
+}
+
+impl PreScanHook for () {
+    async fn pre_scan(&mut self) {}
+}
+
+pub struct PisoPreScan<'a, LoadPin, Spi, const BITS: usize, const BYTES: usize>
+where
+    LoadPin: embedded_hal::digital::OutputPin,
+    Spi: embedded_hal_async::spi::SpiBus,
+{
+    pub piso: &'a SharedPisoShiftReg<LoadPin, Spi, BITS, BYTES>,
+}
+
+impl<'a, LoadPin, Spi, const BITS: usize, const BYTES: usize> PreScanHook for PisoPreScan<'a, LoadPin, Spi, BITS, BYTES>
+where
+    LoadPin: embedded_hal::digital::OutputPin,
+    Spi: embedded_hal_async::spi::SpiBus,
+{
+    async fn pre_scan(&mut self) {
+        let _ = self.piso.update().await;
+    }
+}
 
 /// DirectPinMartex only has input pins.
 pub struct DirectPinMatrix<
@@ -18,6 +46,7 @@ pub struct DirectPinMatrix<
     const ROW: usize,
     const COL: usize,
     const SIZE: usize,
+    H: PreScanHook = (),
 > {
     /// Input pins of the pcb matrix
     direct_pins: [[Option<In>; COL]; ROW],
@@ -29,6 +58,8 @@ pub struct DirectPinMatrix<
     scan_start: Option<Instant>,
     /// Pin active level
     low_active: bool,
+    /// Hook for refreshing inputs between full scans.
+    pre_scan: H,
     /// Current scan pos: (out_idx, in_idx)
     scan_pos: (usize, usize),
 }
@@ -40,16 +71,18 @@ impl<
     const ROW: usize,
     const COL: usize,
     const SIZE: usize,
-> DirectPinMatrix<In, D, ROW, COL, SIZE>
+    H: PreScanHook,
+> DirectPinMatrix<In, D, ROW, COL, SIZE, H>
 {
-    /// Create a matrix from input and output pins.
-    pub fn new(direct_pins: [[Option<In>; COL]; ROW], debouncer: D, low_active: bool) -> Self {
+    /// Create a matrix from input pins with a pre-scan hook.
+    pub fn new_with_hook(direct_pins: [[Option<In>; COL]; ROW], debouncer: D, low_active: bool, pre_scan: H) -> Self {
         DirectPinMatrix {
             direct_pins,
             debouncer,
             key_states: [[KeyState::new(); COL]; ROW],
             scan_start: None,
             low_active,
+            pre_scan,
             scan_pos: (0, 0),
         }
     }
@@ -62,14 +95,43 @@ impl<
     const ROW: usize,
     const COL: usize,
     const SIZE: usize,
-> InputDevice for DirectPinMatrix<In, D, ROW, COL, SIZE>
+> DirectPinMatrix<In, D, ROW, COL, SIZE, ()>
+{
+    /// Create a matrix from input and output pins.
+    pub fn new(direct_pins: [[Option<In>; COL]; ROW], debouncer: D, low_active: bool) -> Self {
+        DirectPinMatrix {
+            direct_pins,
+            debouncer,
+            key_states: [[KeyState::new(); COL]; ROW],
+            scan_start: None,
+            low_active,
+            pre_scan: (),
+            scan_pos: (0, 0),
+        }
+    }
+}
+
+impl<
+    #[cfg(not(feature = "async_matrix"))] In: InputPin,
+    #[cfg(feature = "async_matrix")] In: Wait + InputPin,
+    D: DebouncerTrait<ROW, COL>,
+    H: PreScanHook,
+    const ROW: usize,
+    const COL: usize,
+    const SIZE: usize,
+> InputDevice for DirectPinMatrix<In, D, ROW, COL, SIZE, H>
 {
     async fn read_event(&mut self) -> crate::event::Event {
         loop {
             let (row_idx_start, col_idx_start) = self.scan_pos;
+            let fresh_scan = self.scan_pos == (0, 0);
 
             #[cfg(feature = "async_matrix")]
             self.wait_for_key().await;
+
+            if fresh_scan {
+                self.pre_scan.pre_scan().await;
+            }
 
             // Scan matrix and send report
             for row_idx in row_idx_start..self.direct_pins.len() {
@@ -122,7 +184,8 @@ impl<
     const ROW: usize,
     const COL: usize,
     const SIZE: usize,
-> MatrixTrait<ROW, COL> for DirectPinMatrix<In, D, ROW, COL, SIZE>
+    H: PreScanHook,
+> MatrixTrait<ROW, COL> for DirectPinMatrix<In, D, ROW, COL, SIZE, H>
 {
     #[cfg(feature = "async_matrix")]
     async fn wait_for_key(&mut self) {

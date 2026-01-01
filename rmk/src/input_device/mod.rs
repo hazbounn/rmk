@@ -12,6 +12,7 @@ use crate::keymap::KeyMap;
 pub mod adc;
 pub mod battery;
 pub mod joystick;
+pub mod piso_shift_reg;
 pub mod pmw3610;
 pub mod rotary_encoder;
 

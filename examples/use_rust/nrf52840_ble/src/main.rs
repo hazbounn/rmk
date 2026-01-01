@@ -8,14 +8,15 @@ mod keymap;
 
 use defmt::{info, unwrap};
 use embassy_executor::Spawner;
-use embassy_nrf::gpio::{Input, Output};
+use embassy_nrf::gpio::{Input, Level, Output, OutputDrive};
 use embassy_nrf::interrupt::{self, InterruptExt};
 use embassy_nrf::mode::Async;
 use embassy_nrf::peripherals::{RNG, SAADC, USBD};
 use embassy_nrf::saadc::{self, AnyInput, Input as _, Saadc};
+use embassy_nrf::spim;
 use embassy_nrf::usb::Driver;
 use embassy_nrf::usb::vbus_detect::HardwareVbusDetect;
-use embassy_nrf::{Peri, bind_interrupts, pac, rng, usb};
+use embassy_nrf::{Peri, bind_interrupts, pac, peripherals, rng, usb};
 use keymap::{COL, ROW};
 use nrf_mpsl::Flash;
 use nrf_sdc::mpsl::MultiprotocolServiceLayer;
@@ -28,13 +29,14 @@ use rmk::config::{
     BehaviorConfig, BleBatteryConfig, DeviceConfig, PositionalConfig, RmkConfig, StorageConfig, VialConfig,
 };
 use rmk::debounce::default_debouncer::DefaultDebouncer;
+use rmk::direct_pin::{DirectPinMatrix, PisoPreScan};
 use rmk::futures::future::join4;
 use rmk::input_device::Runnable;
 use rmk::input_device::adc::{AnalogEventType, NrfAdc};
 use rmk::input_device::battery::BatteryProcessor;
+use rmk::input_device::piso_shift_reg::SharedPisoShiftReg;
 use rmk::input_device::rotary_encoder::{DefaultPhase, RotaryEncoder};
 use rmk::keyboard::Keyboard;
-use rmk::matrix::Matrix;
 use rmk::{HostResources, initialize_encoder_keymap_and_storage, run_devices, run_processor_chain, run_rmk};
 use static_cell::StaticCell;
 use vial::{VIAL_KEYBOARD_DEF, VIAL_KEYBOARD_ID};
@@ -49,6 +51,7 @@ bind_interrupts!(struct Irqs {
     RADIO => nrf_sdc::mpsl::HighPrioInterruptHandler;
     TIMER0 => nrf_sdc::mpsl::HighPrioInterruptHandler;
     RTC0 => nrf_sdc::mpsl::HighPrioInterruptHandler;
+    SPIM3 => spim::InterruptHandler<peripherals::SPI3>;
 });
 
 #[embassy_executor::task]
@@ -66,6 +69,9 @@ const L2CAP_RXQ: u8 = 3;
 const L2CAP_MTU: usize = 251;
 
 const UNLOCK_KEYS: &[(u8, u8)] = &[(0, 0), (0, 1)];
+
+const BUTTON_BITS: usize = ROW * COL;
+const BUTTON_BYTES: usize = (BUTTON_BITS + 7) / 8;
 
 fn build_sdc<'d, const N: usize>(
     p: nrf_sdc::Peripherals<'d>,
@@ -145,8 +151,29 @@ async fn main(spawner: Spawner) {
     // Initialize flash
     let flash = Flash::take(mpsl, p.NVMC);
 
-    // Initialize IO Pins
-    let (row_pins, col_pins) = config_matrix_pins_nrf!(peripherals: p, input: [P0_30, P0_31, P0_29, P0_27, P1_13], output:  [P0_28, P0_03, P1_10, P0_02, P0_06, P1_11, P0_13, P0_24, P0_09, P0_10, P1_00, P1_02, P1_03, P1_05]);
+    // Shift register config for direct pins.
+    let mut button_spi_config = spim::Config::default();
+    button_spi_config.frequency = spim::Frequency::M1;
+    button_spi_config.bit_order = spim::BitOrder::MSB_FIRST;
+    let spim = spim::Spim::new(p.SPI3, Irqs, p.P1_08, p.P1_02, p.P1_10, button_spi_config);
+    let button_shift_register = SharedPisoShiftReg::<_, _, BUTTON_BITS, BUTTON_BYTES>::new(
+        Output::new(p.P1_01, Level::High, OutputDrive::Standard),
+        spim,
+    )
+    .unwrap();
+
+    let pre_scan = PisoPreScan {
+        piso: &button_shift_register,
+    };
+
+    let mut direct_pins: [[Option<_>; COL]; ROW] = core::array::from_fn(|_| core::array::from_fn(|_| None));
+    let mut pin_idx = 0;
+    for row_idx in 0..ROW {
+        for col_idx in 0..COL {
+            direct_pins[row_idx][col_idx] = Some(button_shift_register.pin(pin_idx));
+            pin_idx += 1;
+        }
+    }
 
     // Initialize the ADC.
     // We are only using one channel for detecting battery level
@@ -169,6 +196,7 @@ async fn main(spawner: Spawner) {
     let storage_config = StorageConfig {
         start_addr: 0xA0000, // FIXME: use 0x70000 after we can build without softdevice controller
         num_sectors: 6,
+        clear_storage: true, // todo rm
         ..Default::default()
     };
     let rmk_config = RmkConfig {
@@ -196,7 +224,8 @@ async fn main(spawner: Spawner) {
 
     // Initialize the matrix and keyboard
     let debouncer = DefaultDebouncer::new();
-    let mut matrix = Matrix::<_, _, _, ROW, COL, true>::new(row_pins, col_pins, debouncer);
+    let mut matrix =
+        DirectPinMatrix::<_, _, ROW, COL, BUTTON_BITS, _>::new_with_hook(direct_pins, debouncer, true, pre_scan);
     // let mut matrix = TestMatrix::<ROW, COL>::new();
     let mut keyboard = Keyboard::new(&keymap);
 
@@ -221,7 +250,8 @@ async fn main(spawner: Spawner) {
             EVENT_CHANNEL => [batt_proc],
         },
         keyboard.run(), // Keyboard is special
-        run_rmk(&keymap, driver, &stack, &mut storage, rmk_config),
+        // run_rmk(&keymap, driver, &stack, &mut storage, rmk_config),
+        run_rmk(&keymap, &stack, &mut storage, rmk_config),
     )
     .await;
 }
