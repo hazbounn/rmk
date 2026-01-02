@@ -4,6 +4,8 @@ use usbd_hid::descriptor::SerializedDescriptor;
 
 use super::battery_service::BatteryService;
 use super::device_info::DeviceConfigrmationService;
+#[cfg(feature = "ble-midi")]
+use super::midi::MidiService;
 #[cfg(feature = "host")]
 use super::host_service::HostService;
 use crate::channel::KEYBOARD_REPORT_CHANNEL;
@@ -14,12 +16,21 @@ use crate::hid::{HidError, HidWriterTrait, Report, RunnableHidWriter};
 pub(crate) const CCCD_TABLE_SIZE: usize = _CCCD_TABLE_SIZE;
 
 // GATT Server definition
-// NOTE: ideally we would conditionally add the `via_service` member, based on the
-// `vial` feature flag. But when doing that, rust still compiles the member as if
-// the flag was on, for some reason. I suspect it might have something to do with
-// the `gatt_server` macro, but I'm not sure. So we need 2 versions of the Server
-// struct, one with vial support, and one without.
-#[cfg(feature = "host")]
+// NOTE: ideally we would conditionally add service members based on feature flags,
+// but the gatt_server macro still compiles those members. So we need explicit
+// Server variants for feature combinations.
+#[cfg(all(feature = "host", feature = "ble-midi"))]
+#[gatt_server]
+pub(crate) struct Server {
+    pub(crate) battery_service: BatteryService,
+    pub(crate) hid_service: HidService,
+    pub(crate) host_service: HostService,
+    pub(crate) composite_service: CompositeService,
+    pub(crate) device_config_service: DeviceConfigrmationService,
+    pub(crate) midi_service: MidiService,
+}
+
+#[cfg(all(feature = "host", not(feature = "ble-midi")))]
 #[gatt_server]
 pub(crate) struct Server {
     pub(crate) battery_service: BatteryService,
@@ -29,7 +40,17 @@ pub(crate) struct Server {
     pub(crate) device_config_service: DeviceConfigrmationService,
 }
 
-#[cfg(not(feature = "host"))]
+#[cfg(all(not(feature = "host"), feature = "ble-midi"))]
+#[gatt_server]
+pub(crate) struct Server {
+    pub(crate) battery_service: BatteryService,
+    pub(crate) hid_service: HidService,
+    pub(crate) composite_service: CompositeService,
+    pub(crate) device_config_service: DeviceConfigrmationService,
+    pub(crate) midi_service: MidiService,
+}
+
+#[cfg(all(not(feature = "host"), not(feature = "ble-midi")))]
 #[gatt_server]
 pub(crate) struct Server {
     pub(crate) battery_service: BatteryService,

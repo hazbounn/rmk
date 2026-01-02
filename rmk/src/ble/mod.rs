@@ -57,6 +57,8 @@ pub(crate) mod device_info;
 #[cfg(feature = "host")]
 pub(crate) mod host_service;
 pub(crate) mod led;
+#[cfg(feature = "ble-midi")]
+pub(crate) mod midi;
 pub(crate) mod profile;
 
 #[derive(Clone, Copy, Debug)]
@@ -213,6 +215,8 @@ pub(crate) async fn run_ble<
         )
         .unwrap();
 
+    let product_name = rmk_config.device_config.product_name;
+
     #[cfg(not(feature = "_no_usb"))]
     let usb_task = async {
         loop {
@@ -253,7 +257,7 @@ pub(crate) async fn run_ble<
                 &mut controller_pub,
                 ControllerEvent::BleState(ACTIVE_PROFILE.load(Ordering::Relaxed), BleState::Advertising),
             );
-            let adv_fut = advertise(rmk_config.device_config.product_name, &mut peripheral, &server);
+            let adv_fut = advertise(product_name, &mut peripheral, &server);
             // USB + BLE dual mode
             #[cfg(not(feature = "_no_usb"))]
             {
@@ -304,6 +308,8 @@ pub(crate) async fn run_ble<
                                     &server,
                                     &conn,
                                     stack,
+                                    &mut peripheral,
+                                    product_name,
                                     #[cfg(feature = "host")]
                                     keymap,
                                     #[cfg(feature = "host")]
@@ -362,6 +368,8 @@ pub(crate) async fn run_ble<
                                         &server,
                                         &conn,
                                         stack,
+                                        &mut peripheral,
+                                        product_name,
                                         #[cfg(feature = "host")]
                                         keymap,
                                         #[cfg(feature = "host")]
@@ -411,7 +419,9 @@ pub(crate) async fn run_ble<
                         run_ble_keyboard(
                             &server,
                             &conn,
-                            &stack,
+                            stack,
+                            &mut peripheral,
+                            product_name,
                             #[cfg(feature = "host")]
                             keymap,
                             #[cfg(feature = "host")]
@@ -501,6 +511,10 @@ async fn gatt_events_task(server: &Server<'_>, conn: &GattConnection<'_, '_, Def
     let media = server.composite_service.media_report;
     let media_control_point = server.composite_service.hid_control_point;
     let system_control = server.composite_service.system_report;
+    #[cfg(feature = "ble-midi")]
+    let midi_io = &server.midi_service.midi_io;
+    #[cfg(feature = "ble-midi")]
+    let midi_cccd_handle = midi_io.cccd_handle.expect("No CCCD for midi io");
 
     CONNECTION_STATE.store(ConnectionState::Connected.into(), Ordering::Release);
     #[cfg(feature = "controller")]
@@ -553,6 +567,15 @@ async fn gatt_events_task(server: &Server<'_>, conn: &GattConnection<'_, '_, Def
                         }
                     }
                     GattEvent::Write(event) => {
+                        #[cfg(feature = "ble-midi")]
+                        let midi_write_match = event.handle() == midi_io.handle;
+                        #[cfg(not(feature = "ble-midi"))]
+                        let midi_write_match = false;
+                        #[cfg(feature = "ble-midi")]
+                        let midi_cccd_match = event.handle() == midi_cccd_handle;
+                        #[cfg(not(feature = "ble-midi"))]
+                        let midi_cccd_match = false;
+
                         if event.handle() == output_keyboard.handle {
                             if event.data().len() == 1 {
                                 let led_indicator = LedIndicator::from_bits(event.data()[0]);
@@ -561,14 +584,23 @@ async fn gatt_events_task(server: &Server<'_>, conn: &GattConnection<'_, '_, Def
                             } else {
                                 warn!("Wrong keyboard state data: {:?}", event.data());
                             }
+                        } else if midi_write_match {
+                            info!("[midi] write: {:?}", event.data());
                         } else if event.handle() == input_keyboard.cccd_handle.expect("No CCCD for input keyboard")
                             || event.handle() == mouse.cccd_handle.expect("No CCCD for mouse report")
                             || event.handle() == media.cccd_handle.expect("No CCCD for media report")
                             || event.handle() == system_control.cccd_handle.expect("No CCCD for system report")
                             || event.handle() == battery_level.cccd_handle.expect("No CCCD for battery level")
+                            || midi_cccd_match
                         {
                             // CCCD write event
                             cccd_updated = true;
+                            #[cfg(feature = "ble-midi")]
+                            if midi_cccd_match {
+                                let enabled = event.data().first().map(|v| v & 0x01 != 0).unwrap_or(false);
+                                midi::update_midi_notify_state(enabled);
+                                info!("[midi] notify {}", if enabled { "enabled" } else { "disabled" });
+                            }
                         } else if event.handle() == hid_control_point.handle
                             || event.handle() == media_control_point.handle
                         {
@@ -648,6 +680,8 @@ async fn gatt_events_task(server: &Server<'_>, conn: &GattConnection<'_, '_, Def
                     CENTRAL_SLEEP.signal(false);
 
                     if let Some(table) = server.get_cccd_table(conn.raw()) {
+                        #[cfg(feature = "ble-midi")]
+                        midi::sync_midi_notify_state(&table, Some(midi_cccd_handle));
                         UPDATED_CCCD_TABLE.signal(table);
                     }
                 }
@@ -727,6 +761,8 @@ async fn advertise<'a, 'b, C: Controller>(
     // Wait for 10ms to ensure the USB is checked
     embassy_time::Timer::after_millis(10).await;
     let mut advertiser_data = [0; 31];
+    #[cfg(feature = "ble-midi")]
+    let mut scan_data_buf = [0; 31];
     AdStructure::encode_slice(
         &[
             AdStructure::Flags(LE_GENERAL_DISCOVERABLE | BR_EDR_NOT_SUPPORTED),
@@ -739,6 +775,20 @@ async fn advertise<'a, 'b, C: Controller>(
         ],
         &mut advertiser_data[..],
     )?;
+    let scan_data = {
+        #[cfg(feature = "ble-midi")]
+        {
+            AdStructure::encode_slice(
+                &[AdStructure::ServiceUuids128(&[midi::MIDI_SERVICE_UUID])],
+                &mut scan_data_buf[..],
+            )?;
+            &scan_data_buf[..]
+        }
+        #[cfg(not(feature = "ble-midi"))]
+        {
+            &[][..]
+        }
+    };
 
     let advertise_config = AdvertisementParameters {
         primary_phy: PhyKind::Le2M,
@@ -755,7 +805,7 @@ async fn advertise<'a, 'b, C: Controller>(
             &advertise_config,
             Advertisement::ConnectableScannableUndirected {
                 adv_data: &advertiser_data[..],
-                scan_data: &[],
+                scan_data,
             },
         )
         .await?;
@@ -860,7 +910,9 @@ async fn run_ble_keyboard<
 >(
     server: &'b Server<'_>,
     conn: &GattConnection<'a, 'b, DefaultPacketPool>,
-    stack: &Stack<'_, C, DefaultPacketPool>,
+    stack: &Stack<'a, C, DefaultPacketPool>,
+    peripheral: &mut Peripheral<'a, C, DefaultPacketPool>,
+    name: &str,
     #[cfg(feature = "host")] keymap: &'c RefCell<KeyMap<'c, ROW, COL, NUM_LAYER, NUM_ENCODER>>,
     #[cfg(feature = "host")] rmk_config: &'d mut RmkConfig<'static>,
     #[cfg(feature = "storage")] storage: &mut Storage<F, ROW, COL, NUM_LAYER, NUM_ENCODER>,
@@ -870,6 +922,8 @@ async fn run_ble_keyboard<
     let ble_host_server = BleHostServer::new(server, conn);
     let ble_led_reader = BleLedReader {};
     let mut ble_battery_server = BleBatteryServer::new(server, conn);
+    #[cfg(feature = "ble-midi")]
+    midi::update_midi_notify_state(false);
 
     // Load CCCD table from storage
     #[cfg(feature = "storage")]
@@ -882,17 +936,109 @@ async fn run_ble_keyboard<
         server.set_cccd_table(conn.raw(), bond_info.cccd_table.clone());
     }
 
+    #[cfg(feature = "ble-midi")]
+    if let Some(table) = server.get_cccd_table(conn.raw()) {
+        midi::sync_midi_notify_state(&table, server.midi_service.midi_io.cccd_handle);
+    }
+
     // Use 2M Phy
     update_ble_phy(stack, conn.raw()).await;
 
+    let mut connected_adv_data = [0; 31];
+    #[cfg(feature = "ble-midi")]
+    let mut connected_scan_data_buf = [0; 31];
+    let _connected_advertiser = if let Err(e) = AdStructure::encode_slice(
+        &[
+            AdStructure::Flags(LE_GENERAL_DISCOVERABLE | BR_EDR_NOT_SUPPORTED),
+            AdStructure::ServiceUuids16(&[BATTERY.to_le_bytes(), HUMAN_INTERFACE_DEVICE.to_le_bytes()]),
+            AdStructure::CompleteLocalName(name.as_bytes()),
+            AdStructure::Unknown {
+                ty: 0x19, // Appearance
+                data: &KEYBOARD.to_le_bytes(),
+            },
+        ],
+        &mut connected_adv_data[..],
+    ) {
+        #[cfg(feature = "defmt")]
+        let e = defmt::Debug2Format(&e);
+        warn!("[adv] connected advertising data error: {:?}", e);
+        None
+    } else {
+        let scan_data = {
+            #[cfg(feature = "ble-midi")]
+            {
+                match AdStructure::encode_slice(
+                    &[AdStructure::ServiceUuids128(&[midi::MIDI_SERVICE_UUID])],
+                    &mut connected_scan_data_buf[..],
+                ) {
+                    Ok(_) => &connected_scan_data_buf[..],
+                    Err(e) => {
+                        #[cfg(feature = "defmt")]
+                        let e = defmt::Debug2Format(&e);
+                        warn!("[adv] connected scan data error: {:?}", e);
+                        &[][..]
+                    }
+                }
+            }
+            #[cfg(not(feature = "ble-midi"))]
+            {
+                &[][..]
+            }
+        };
+
+        let advertise_config = AdvertisementParameters {
+            primary_phy: PhyKind::Le2M,
+            secondary_phy: PhyKind::Le2M,
+            tx_power: TxPower::Plus8dBm,
+            interval_min: Duration::from_millis(200),
+            interval_max: Duration::from_millis(200),
+            ..Default::default()
+        };
+
+        match peripheral
+            .advertise(
+                &advertise_config,
+                Advertisement::NonconnectableScannableUndirected {
+                    adv_data: &connected_adv_data[..],
+                    scan_data,
+                },
+            )
+            .await
+        {
+            Ok(advertiser) => {
+                info!("[adv] connected nonconnectable advertising");
+                Some(advertiser)
+            }
+            Err(e) => {
+                #[cfg(feature = "defmt")]
+                let e = defmt::Debug2Format(&e);
+                warn!("[adv] connected advertising start error: {:?}", e);
+                None
+            }
+        }
+    };
+
     let communication_task = async {
-        if let Either3::First(e) = select3(
+        let midi_task = async {
+            #[cfg(feature = "ble-midi")]
+            {
+                midi::run_ble_midi_test(server, conn).await;
+            }
+            #[cfg(not(feature = "ble-midi"))]
+            {
+                core::future::pending::<()>().await;
+            }
+        };
+
+        let result = embassy_futures::select::select4(
             gatt_events_task(server, conn),
             set_conn_params(stack, conn),
             ble_battery_server.run(),
+            midi_task,
         )
-        .await
-        {
+        .await;
+
+        if let embassy_futures::select::Either4::First(e) = result {
             error!("[gatt_events_task] end: {:?}", e)
         }
     };
