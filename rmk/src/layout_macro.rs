@@ -226,3 +226,122 @@ macro_rules! macros {
         $crate::types::action::KeyAction::Single($crate::types::action::Action::TriggerMacro($index))
     };
 }
+
+/// Create a MIDI note action (channel is a wmidi::Channel).
+#[macro_export]
+macro_rules! mn {
+    ($ch: expr, $note: expr) => {
+        $crate::mn!($ch, $note, $crate::wmidi::Velocity::from_u8_lossy(64))
+    };
+    ($ch: expr, $note: expr, $vel: expr) => {
+        $crate::types::action::KeyAction::Single($crate::types::action::Action::Midi(
+            $crate::types::action::MidiAction::Note {
+                channel: $ch,
+                note: $note,
+                velocity: $vel,
+            },
+        ))
+    };
+}
+
+/// Create a MIDI control change action (channel is a wmidi::Channel).
+#[macro_export]
+macro_rules! mcc {
+    ($ch: expr, $cc: expr) => {
+        $crate::mcc!($ch, $cc, $crate::wmidi::ControlValue::from_u8_lossy(64))
+    };
+    ($ch: expr, $cc: expr, $val: expr) => {
+        $crate::types::action::KeyAction::Single($crate::types::action::Action::Midi(
+            $crate::types::action::MidiAction::Cc {
+                channel: $ch,
+                cc: $cc,
+                value: $val,
+            },
+        ))
+    };
+}
+
+/// Create a MIDI control change step increment action (channel is a wmidi::Channel).
+#[macro_export]
+macro_rules! mcci {
+    ($ch: expr, $cc: expr, $delta: expr) => {
+        $crate::types::action::KeyAction::Single($crate::types::action::Action::Midi(
+            $crate::types::action::MidiAction::CcStep {
+                channel: $ch,
+                cc: $cc,
+                delta: {
+                    let delta: i8 = $delta;
+                    delta
+                },
+            },
+        ))
+    };
+}
+
+/// Create a MIDI control change step decrement action (channel is a wmidi::Channel).
+#[macro_export]
+macro_rules! mccd {
+    ($ch: expr, $cc: expr, $delta: expr) => {
+        $crate::types::action::KeyAction::Single($crate::types::action::Action::Midi(
+            $crate::types::action::MidiAction::CcStep {
+                channel: $ch,
+                cc: $cc,
+                delta: {
+                    let delta: i8 = $delta;
+                    -delta
+                },
+            },
+        ))
+    };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rmk_types::action::{Action, KeyAction, MidiAction};
+
+    #[test]
+    fn test_midi_note_macro_defaults() {
+        let action = mn!(wmidi::Channel::Ch1, wmidi::Note::C4);
+        match action {
+            KeyAction::Single(Action::Midi(MidiAction::Note { channel, note, velocity })) => {
+                assert_eq!(channel, wmidi::Channel::Ch1);
+                assert_eq!(note, wmidi::Note::C4);
+                assert_eq!(u8::from(velocity), 64);
+            }
+            _ => panic!("expected midi note action"),
+        }
+    }
+
+    #[test]
+    fn test_midi_cc_macro_defaults() {
+        let action = mcc!(wmidi::Channel::Ch2, wmidi::ControlFunction::MODULATION_WHEEL);
+        match action {
+            KeyAction::Single(Action::Midi(MidiAction::Cc { channel, cc, value })) => {
+                assert_eq!(channel, wmidi::Channel::Ch2);
+                assert_eq!(cc, wmidi::ControlFunction::MODULATION_WHEEL);
+                assert_eq!(u8::from(value), 64);
+            }
+            _ => panic!("expected midi cc action"),
+        }
+    }
+
+    #[test]
+    fn test_midi_cc_step_macros() {
+        let action = mcci!(wmidi::Channel::Ch1, wmidi::ControlFunction::MODULATION_WHEEL, 7);
+        match action {
+            KeyAction::Single(Action::Midi(MidiAction::CcStep { delta, .. })) => {
+                assert_eq!(delta, 7);
+            }
+            _ => panic!("expected midi cc step action"),
+        }
+
+        let action = mccd!(wmidi::Channel::Ch1, wmidi::ControlFunction::MODULATION_WHEEL, 7);
+        match action {
+            KeyAction::Single(Action::Midi(MidiAction::CcStep { delta, .. })) => {
+                assert_eq!(delta, -7);
+            }
+            _ => panic!("expected midi cc step action"),
+        }
+    }
+}

@@ -1821,6 +1821,7 @@ dependencies = [
  "toml",
  "trouble-host",
  "usbd-hid 0.9.0",
+ "wmidi",
 ]
 
 [[package]]
@@ -1892,6 +1893,7 @@ dependencies = [
  "postcard",
  "serde",
  "strum",
+ "wmidi",
 ]
 
 [[package]]
@@ -2569,6 +2571,12 @@ checksum = "21a0236b59786fed61e2a80582dd500fe61f18b5dca67a4a067d0bc9039339cf"
 dependencies = [
  "memchr",
 ]
+
+[[package]]
+name = "wmidi"
+version = "4.0.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e55f35b40ad0178422d06e9ba845041baf2faf04627b91fde928d0f6a21c712"
 
 [[package]]
 name = "xz2"

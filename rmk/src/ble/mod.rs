@@ -1022,7 +1022,7 @@ async fn run_ble_keyboard<
         let midi_task = async {
             #[cfg(feature = "ble-midi")]
             {
-                midi::run_ble_midi_test(server, conn).await;
+                run_ble_midi_dispatch(server, conn).await;
             }
             #[cfg(not(feature = "ble-midi"))]
             {
@@ -1057,6 +1057,38 @@ async fn run_ble_keyboard<
         ble_hid_server,
     )
     .await;
+}
+
+#[cfg(feature = "ble-midi")]
+async fn run_ble_midi_dispatch<'stack, 'server, 'conn, P: PacketPool>(
+    server: &Server<'_>,
+    conn: &'conn GattConnection<'stack, 'server, P>,
+) {
+    use crate::channel::MIDI_EVENT_CHANNEL;
+
+    let midi = midi::BleMidiServer::new(server, conn);
+    info!("[midi] connected");
+    midi::wait_for_notify_enabled().await;
+    info!("[midi] notify enabled");
+
+    let mut translator = crate::midi::MidiTranslator::new();
+    loop {
+        let event = MIDI_EVENT_CHANNEL.receive().await;
+        let Some(bytes) = translator.action_to_bytes(event.action, event.pressed) else {
+            continue;
+        };
+        let packet = match midi::build_ble_midi_packet(bytes.as_slice()) {
+            Ok(packet) => packet,
+            Err(e) => {
+                warn!("[midi] packet build error: {:?}", e);
+                continue;
+            }
+        };
+        info!("[midi] send packet: {:?}", packet);
+        if let Err(e) = midi.send_midi(&packet).await {
+            warn!("[midi] send error: {:?}", e);
+        }
+    }
 }
 
 // Update the PHY to 2M

@@ -1,7 +1,7 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use embassy_sync::signal::Signal;
-use embassy_time::{Duration, Instant, Timer};
+use embassy_time::Instant;
 use heapless::Vec;
 use trouble_host::prelude::*;
 
@@ -16,8 +16,6 @@ pub(crate) const MIDI_IO_UUID: [u8; 16] = [
 ];
 
 const MIDI_IO_MAX_LEN: usize = 20;
-const MIDI_TEST_INTERVAL_MS: u64 = 750;
-
 pub(crate) static MIDI_NOTIFY_STATE: AtomicBool = AtomicBool::new(false);
 pub(crate) static MIDI_NOTIFY_SIGNAL: Signal<RawMutex, bool> = Signal::new();
 
@@ -82,7 +80,7 @@ pub(crate) fn sync_midi_notify_state(cccd_table: &CccdTable<CCCD_TABLE_SIZE>, cc
     update_midi_notify_state(enabled);
 }
 
-async fn wait_for_notify_enabled() {
+pub(crate) async fn wait_for_notify_enabled() {
     if MIDI_NOTIFY_STATE.load(Ordering::Acquire) {
         return;
     }
@@ -93,7 +91,7 @@ async fn wait_for_notify_enabled() {
     }
 }
 
-fn build_ble_midi_packet(midi_message: &[u8]) -> Result<Vec<u8, MIDI_IO_MAX_LEN>, MidiError> {
+pub(crate) fn build_ble_midi_packet(midi_message: &[u8]) -> Result<Vec<u8, MIDI_IO_MAX_LEN>, MidiError> {
     // 13-bit timestamp, 1ms ticks, wraps at 8192ms
     let ts = (Instant::now().as_millis() as u16) & 0x1FFF;
 
@@ -112,40 +110,26 @@ fn build_ble_midi_packet(midi_message: &[u8]) -> Result<Vec<u8, MIDI_IO_MAX_LEN>
     Ok(packet)
 }
 
-pub(crate) async fn run_ble_midi_test<'stack, 'server, 'conn, P: PacketPool>(
-    server: &Server<'_>,
-    conn: &'conn GattConnection<'stack, 'server, P>,
-) {
-    let midi = BleMidiServer::new(server, conn);
-    info!("[midi] connected");
-    wait_for_notify_enabled().await;
-    info!("[midi] notify enabled");
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    const C1_NOTE_ON: [u8; 3] = [0x90, 0x24, 0x40];
-    const C1_NOTE_OFF: [u8; 3] = [0x80, 0x24, 0x40];
+    #[test]
+    fn test_packet_layout() {
+        let message = [0x90, 0x3C, 0x40];
+        let packet = build_ble_midi_packet(&message).unwrap();
+        assert_eq!(packet.len(), message.len() + 2);
+        assert!(packet[0] & 0x80 != 0);
+        assert!(packet[1] & 0x80 != 0);
+        assert_eq!(&packet[2..], &message);
+    }
 
-    let mut note_on = false;
-    loop {
-        let MIDI_TEST_MESSAGE = if note_on {
-            note_on = false;
-            C1_NOTE_OFF
-        } else {
-            note_on = true;
-            C1_NOTE_ON
-        };
-        let packet = match build_ble_midi_packet(&MIDI_TEST_MESSAGE) {
-            Ok(packet) => packet,
-            Err(e) => {
-                warn!("[midi] packet build error: {:?}", e);
-                Timer::after(Duration::from_millis(MIDI_TEST_INTERVAL_MS)).await;
-                continue;
-            }
-        };
-
-        match midi.send_midi(&packet).await {
-            Ok(()) => info!("[midi] send ok"),
-            Err(e) => warn!("[midi] send error: {:?}", e),
-        }
-        Timer::after(Duration::from_millis(MIDI_TEST_INTERVAL_MS)).await;
+    #[test]
+    fn test_packet_too_large() {
+        let message = [0u8; MIDI_IO_MAX_LEN];
+        assert!(matches!(
+            build_ble_midi_packet(&message),
+            Err(MidiError::PacketTooLarge)
+        ));
     }
 }

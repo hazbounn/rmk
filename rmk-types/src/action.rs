@@ -269,6 +269,77 @@ impl KeyAction {
     }
 }
 
+/// A MIDI action that can be converted into a MIDI message.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum MidiAction {
+    Note {
+        #[serde(with = "wmidi_serde::channel")]
+        channel: wmidi::Channel,
+        #[serde(with = "wmidi_serde::note")]
+        note: wmidi::Note,
+        #[serde(with = "wmidi_serde::u7")]
+        velocity: wmidi::Velocity,
+    },
+    Cc {
+        #[serde(with = "wmidi_serde::channel")]
+        channel: wmidi::Channel,
+        #[serde(with = "wmidi_serde::control_function")]
+        cc: wmidi::ControlFunction,
+        #[serde(with = "wmidi_serde::u7")]
+        value: wmidi::ControlValue,
+    },
+    CcStep {
+        #[serde(with = "wmidi_serde::channel")]
+        channel: wmidi::Channel,
+        #[serde(with = "wmidi_serde::control_function")]
+        cc: wmidi::ControlFunction,
+        delta: i8,
+    },
+}
+
+impl postcard::experimental::max_size::MaxSize for MidiAction {
+    const POSTCARD_MAX_SIZE: usize = 4;
+}
+
+#[cfg(feature = "defmt")]
+impl defmt::Format for MidiAction {
+    fn format(&self, f: defmt::Formatter<'_>) {
+        match self {
+            MidiAction::Note {
+                channel,
+                note,
+                velocity,
+            } => {
+                defmt::write!(
+                    f,
+                    "MidiNote(ch={}, note={}, vel={})",
+                    channel.number(),
+                    u8::from(*note),
+                    u8::from(*velocity)
+                );
+            }
+            MidiAction::Cc { channel, cc, value } => {
+                defmt::write!(
+                    f,
+                    "MidiCc(ch={}, cc={}, val={})",
+                    channel.number(),
+                    u8::from(*cc),
+                    u8::from(*value)
+                );
+            }
+            MidiAction::CcStep { channel, cc, delta } => {
+                defmt::write!(
+                    f,
+                    "MidiCcStep(ch={}, cc={}, delta={})",
+                    channel.number(),
+                    u8::from(*cc),
+                    delta
+                );
+            }
+        }
+    }
+}
+
 /// combo, fork, etc. compares key actions
 /// WARNING: this is not a perfect comparison, we ignores the profile config of TapHold!
 impl PartialEq for KeyAction {
@@ -300,6 +371,8 @@ pub enum Action {
     Modifier(ModifierCombination),
     /// Key stroke with modifier combination triggered.
     KeyWithModifier(KeyCode, ModifierCombination),
+    /// MIDI action (note, control change, etc.).
+    Midi(MidiAction),
     /// Activate a layer
     LayerOn(u8),
     /// Activate a layer with modifier combination triggered.
@@ -325,6 +398,95 @@ pub enum Action {
     OneShotModifier(ModifierCombination),
     /// Oneshot key, keep the key active until the next key is triggered.
     OneShotKey(KeyCode),
+}
+
+mod wmidi_serde {
+    use core::convert::TryFrom;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub mod channel {
+        use super::*;
+        use serde::de::Error as _;
+
+        pub fn serialize<S>(value: &wmidi::Channel, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            serializer.serialize_u8(value.number())
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<wmidi::Channel, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let number = u8::deserialize(deserializer)?;
+            if number == 0 || number > 16 {
+                return Err(D::Error::custom("midi channel out of range"));
+            }
+            wmidi::Channel::from_index(number - 1).map_err(|_| D::Error::custom("midi channel out of range"))
+        }
+    }
+
+    pub mod note {
+        use super::*;
+        use serde::de::Error as _;
+
+        pub fn serialize<S>(value: &wmidi::Note, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            serializer.serialize_u8(u8::from(*value))
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<wmidi::Note, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let value = u8::deserialize(deserializer)?;
+            wmidi::Note::try_from(value).map_err(|_| D::Error::custom("midi note out of range"))
+        }
+    }
+
+    pub mod control_function {
+        use super::*;
+        use serde::de::Error as _;
+
+        pub fn serialize<S>(value: &wmidi::ControlFunction, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            serializer.serialize_u8(u8::from(*value))
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<wmidi::ControlFunction, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let value = u8::deserialize(deserializer)?;
+            let value = wmidi::U7::try_from(value).map_err(|_| D::Error::custom("midi cc out of range"))?;
+            Ok(wmidi::ControlFunction::from(value))
+        }
+    }
+
+    pub mod u7 {
+        use super::*;
+        use serde::de::Error as _;
+
+        pub fn serialize<S>(value: &wmidi::U7, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            serializer.serialize_u8(u8::from(*value))
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<wmidi::U7, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let value = u8::deserialize(deserializer)?;
+            wmidi::U7::try_from(value).map_err(|_| D::Error::custom("midi value out of range"))
+        }
+    }
 }
 
 #[cfg(test)]

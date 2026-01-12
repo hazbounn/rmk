@@ -19,7 +19,7 @@ use {
     crate::event::ControllerEvent,
 };
 
-use crate::channel::{KEY_EVENT_CHANNEL, KEYBOARD_REPORT_CHANNEL};
+use crate::channel::{KEY_EVENT_CHANNEL, KEYBOARD_REPORT_CHANNEL, MIDI_EVENT_CHANNEL, MidiActionEvent};
 use crate::combo::Combo;
 use crate::config::Hand;
 use crate::descriptor::KeyboardReport;
@@ -1182,6 +1182,14 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
                     self.with_modifiers &= !(modifiers);
                 }
                 self.process_action_key(key_code, event).await
+            }
+            Action::Midi(action) => {
+                MIDI_EVENT_CHANNEL
+                    .send(MidiActionEvent {
+                        action,
+                        pressed: event.pressed,
+                    })
+                    .await;
             }
             Action::LayerOnWithModifier(layer_num, modifiers) => {
                 if event.pressed {

@@ -54,7 +54,7 @@ use {
     crate::light::UsbLedReader,
     crate::usb::{UsbKeyboardWriter, add_usb_reader_writer, add_usb_writer, new_usb_builder},
 };
-pub use {embassy_futures, futures, heapless, rmk_macro as macros, rmk_types as types};
+pub use {embassy_futures, futures, heapless, rmk_macro as macros, rmk_types as types, wmidi};
 #[cfg(feature = "storage")]
 use {embedded_storage_async::nor_flash::NorFlash as AsyncNorFlash, storage::Storage};
 
@@ -90,6 +90,7 @@ pub mod layout_macro;
 pub mod light;
 pub mod matrix;
 pub mod morse;
+pub(crate) mod midi;
 #[cfg(feature = "split")]
 pub mod split;
 pub mod state;

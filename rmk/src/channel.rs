@@ -18,6 +18,7 @@ use crate::SPLIT_PERIPHERALS_NUM;
 use crate::event::{Event, KeyboardEvent};
 use crate::hid::Report;
 use crate::{EVENT_CHANNEL_SIZE, REPORT_CHANNEL_SIZE, RawMutex};
+use rmk_types::action::MidiAction;
 #[cfg(feature = "storage")]
 use crate::{FLASH_CHANNEL_SIZE, storage::FlashOperationMessage};
 
@@ -56,10 +57,20 @@ pub type ControllerPub = Publisher<
 /// Signal for control led indicator, it's used only in BLE keyboards, since BLE receiving is not async
 #[cfg(feature = "_ble")]
 pub static LED_SIGNAL: Signal<RawMutex, LedIndicator> = Signal::new();
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct MidiActionEvent {
+    pub action: MidiAction,
+    pub pressed: bool,
+}
+
 /// Channel for key events only
 pub static KEY_EVENT_CHANNEL: Channel<RawMutex, KeyboardEvent, EVENT_CHANNEL_SIZE> = Channel::new();
 /// Channel for all other events
 pub static EVENT_CHANNEL: Channel<RawMutex, Event, EVENT_CHANNEL_SIZE> = Channel::new();
+/// Channel for MIDI action events
+pub static MIDI_EVENT_CHANNEL: Channel<RawMutex, MidiActionEvent, EVENT_CHANNEL_SIZE> = Channel::new();
 /// Channel for keyboard report from input processors to hid writer/reader
 pub static KEYBOARD_REPORT_CHANNEL: Channel<RawMutex, Report, REPORT_CHANNEL_SIZE> = Channel::new();
 /// Channel for controller events
