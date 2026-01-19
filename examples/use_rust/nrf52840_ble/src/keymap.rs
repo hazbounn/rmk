@@ -4,7 +4,7 @@ use wmidi;
 pub(crate) const COL: usize = 4;
 pub(crate) const ROW: usize = 6;
 pub(crate) const NUM_LAYER: usize = 1;
-pub(crate) const NUM_ENCODER: usize = 0;
+pub(crate) const NUM_ENCODER: usize = 2;
 
 #[rustfmt::skip]
 pub const fn get_default_keymap() -> [[[KeyAction; COL]; ROW]; NUM_LAYER] {
@@ -21,5 +21,8 @@ pub const fn get_default_keymap() -> [[[KeyAction; COL]; ROW]; NUM_LAYER] {
 }
 
 pub const fn get_default_encoder_map() -> [[EncoderAction; NUM_ENCODER]; NUM_LAYER] {
-    [[]]
+    [[
+        encoder!(k!(KbVolumeUp), k!(KbVolumeDown)),
+        encoder!(k!(KbVolumeUp), k!(KbVolumeDown)),
+    ]]
 }

@@ -34,8 +34,8 @@ use rmk::futures::future::join4;
 use rmk::input_device::Runnable;
 use rmk::input_device::adc::{AnalogEventType, NrfAdc};
 use rmk::input_device::battery::BatteryProcessor;
-use rmk::input_device::piso_shift_reg::SharedPisoShiftReg;
-use rmk::input_device::rotary_encoder::{DefaultPhase, RotaryEncoder};
+use rmk::input_device::piso_shift_reg::{SharedPisoShiftReg, SharedPisoShiftRegPin};
+use rmk::input_device::rotary_encoder::{RotaryEncoder, RotaryEncoderRunner};
 use rmk::keyboard::Keyboard;
 use rmk::{HostResources, initialize_encoder_keymap_and_storage, run_devices, run_processor_chain, run_rmk};
 use static_cell::StaticCell;
@@ -52,6 +52,7 @@ bind_interrupts!(struct Irqs {
     TIMER0 => nrf_sdc::mpsl::HighPrioInterruptHandler;
     RTC0 => nrf_sdc::mpsl::HighPrioInterruptHandler;
     SPIM3 => spim::InterruptHandler<peripherals::SPI3>;
+    SPI2 => spim::InterruptHandler<peripherals::SPI2>;
 });
 
 #[embassy_executor::task]
@@ -72,6 +73,9 @@ const UNLOCK_KEYS: &[(u8, u8)] = &[(0, 0), (0, 1)];
 
 const BUTTON_BITS: usize = ROW * COL;
 const BUTTON_BYTES: usize = (BUTTON_BITS + 7) / 8;
+const ENCODER_BITS: usize = 16;
+const ENCODER_BYTES: usize = (ENCODER_BITS + 7) / 8;
+const ENCODER_COUNT: usize = ENCODER_BITS / 2;
 
 fn build_sdc<'d, const N: usize>(
     p: nrf_sdc::Peripherals<'d>,
@@ -175,6 +179,30 @@ async fn main(spawner: Spawner) {
         }
     }
 
+    let mut encoder_spi_config = spim::Config::default();
+    encoder_spi_config.frequency = spim::Frequency::M1;
+    encoder_spi_config.bit_order = spim::BitOrder::MSB_FIRST;
+    let spim = spim::Spim::new(p.SPI2, Irqs, p.P1_15, p.P1_14, p.P0_30, encoder_spi_config);
+    let encoder_shift_register = SharedPisoShiftReg::<_, _, ENCODER_BITS, ENCODER_BYTES>::new(
+        Output::new(p.P1_13, Level::High, OutputDrive::Standard),
+        spim,
+    )
+    .unwrap();
+    let encoder_pre_scan = PisoPreScan {
+        piso: &encoder_shift_register,
+    };
+    let mut pin_iter = encoder_shift_register.all_pins();
+    let encoders: [rmk::input_device::rotary_encoder::RotaryEncoder<
+        SharedPisoShiftRegPin<'_, Output<'_>, embassy_nrf::spim::Spim<'_>, 16, 2>,
+        SharedPisoShiftRegPin<'_, Output<'_>, embassy_nrf::spim::Spim<'_>, 16, 2>,
+        _,
+    >; ENCODER_COUNT] = core::array::from_fn(|idx| {
+        let pin_a = pin_iter.next().unwrap();
+        let pin_b = pin_iter.next().unwrap();
+        RotaryEncoder::with_resolution(pin_a, pin_b, 4, true, idx as u8)
+    });
+    let mut encoder_runner = RotaryEncoderRunner::new_with_hook(encoders, encoder_pre_scan);
+
     // Initialize the ADC.
     // We are only using one channel for detecting battery level
     let adc_pin = p.P0_05.degrade_saadc();
@@ -229,11 +257,6 @@ async fn main(spawner: Spawner) {
     // let mut matrix = TestMatrix::<ROW, COL>::new();
     let mut keyboard = Keyboard::new(&keymap);
 
-    // Initialize the encoder
-    let pin_a = Input::new(p.P1_06, embassy_nrf::gpio::Pull::None);
-    let pin_b = Input::new(p.P1_04, embassy_nrf::gpio::Pull::None);
-    let mut encoder = RotaryEncoder::with_phase(pin_a, pin_b, DefaultPhase, 0);
-
     let mut adc_device = NrfAdc::new(
         saadc,
         [AnalogEventType::Battery],
@@ -244,7 +267,7 @@ async fn main(spawner: Spawner) {
 
     join4(
         run_devices! (
-            (matrix, encoder, adc_device) => EVENT_CHANNEL,
+            (matrix, encoder_runner, adc_device) => EVENT_CHANNEL,
         ),
         run_processor_chain! {
             EVENT_CHANNEL => [batt_proc],

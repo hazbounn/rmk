@@ -4,10 +4,12 @@
 use embedded_hal::digital::InputPin;
 #[cfg(feature = "async_matrix")]
 use embedded_hal_async::digital::Wait;
+use embassy_time::Timer;
 use postcard::experimental::max_size::MaxSize;
 use serde::{Deserialize, Serialize};
 
 use super::InputDevice;
+use crate::direct_pin::PreScanHook;
 use crate::event::{Event, KeyboardEvent};
 
 /// Holds current/old state and both [`InputPin`](https://docs.rs/embedded-hal/latest/embedded_hal/digital/trait.InputPin.html)
@@ -260,6 +262,89 @@ impl<
                 // Wait for 20ms to avoid busy loop
                 embassy_time::Timer::after_millis(20).await;
             }
+        }
+    }
+}
+
+/// Runs a group of rotary encoders as a single input device.
+pub struct RotaryEncoderRunner<A, B, P, const N: usize, H: PreScanHook = ()>
+where
+    A: InputPin,
+    B: InputPin,
+    P: Phase,
+{
+    encoders: [RotaryEncoder<A, B, P>; N],
+    pre_scan: H,
+    scan_pos: usize,
+}
+
+impl<A, B, P, const N: usize, H: PreScanHook> RotaryEncoderRunner<A, B, P, N, H>
+where
+    A: InputPin,
+    B: InputPin,
+    P: Phase,
+{
+    /// Create a runner with a pre-scan hook.
+    pub fn new_with_hook(encoders: [RotaryEncoder<A, B, P>; N], pre_scan: H) -> Self {
+        Self {
+            encoders,
+            pre_scan,
+            scan_pos: 0,
+        }
+    }
+}
+
+impl<A, B, P, const N: usize> RotaryEncoderRunner<A, B, P, N, ()>
+where
+    A: InputPin,
+    B: InputPin,
+    P: Phase,
+{
+    /// Create a runner without a pre-scan hook.
+    pub fn new(encoders: [RotaryEncoder<A, B, P>; N]) -> Self {
+        Self {
+            encoders,
+            pre_scan: (),
+            scan_pos: 0,
+        }
+    }
+}
+
+impl<A, B, P, const N: usize, H: PreScanHook> InputDevice for RotaryEncoderRunner<A, B, P, N, H>
+where
+    A: InputPin,
+    B: InputPin,
+    P: Phase,
+{
+    async fn read_event(&mut self) -> Event {
+        loop {
+            let idx_start = self.scan_pos;
+            let fresh_scan = self.scan_pos == 0;
+
+            if fresh_scan {
+                self.pre_scan.pre_scan().await;
+            }
+
+            for idx in idx_start..self.encoders.len() {
+                let encoder = self.encoders.get_mut(idx).unwrap();
+
+                if let Some(last_action) = encoder.last_action {
+                    Timer::after_millis(5).await;
+                    encoder.last_action = None;
+                    self.scan_pos = idx;
+                    return Event::Key(KeyboardEvent::rotary_encoder(encoder.id, last_action, false));
+                }
+
+                let direction = encoder.update();
+                if direction != Direction::None {
+                    encoder.last_action = Some(direction);
+                    self.scan_pos = idx;
+                    return Event::Key(KeyboardEvent::rotary_encoder(encoder.id, direction, true));
+                }
+            }
+
+            self.scan_pos = 0;
+            Timer::after_micros(100).await;
         }
     }
 }
