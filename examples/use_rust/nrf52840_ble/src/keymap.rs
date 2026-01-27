@@ -1,5 +1,5 @@
 use rmk::types::action::{EncoderAction, KeyAction};
-use rmk::{encoder, k, layer, mccd, mcci, mn, mo, to};
+use rmk::{encoder, k, layer, mccd, mcci, mn, mo, mto};
 use wmidi;
 use wmidi::Channel::Ch1;
 use wmidi::ControlFunction as MidiCC;
@@ -10,6 +10,8 @@ pub(crate) const ROW: usize = 6;
 pub(crate) const NUM_LAYER: usize = 6;
 pub(crate) const NUM_ENCODER: usize = 8;
 
+const DEFAULT_CC_INCREMENT: i8 = 1i8;
+
 #[rustfmt::skip]
 pub const fn get_default_keymap() -> [[[KeyAction; COL]; ROW]; NUM_LAYER] {
     [
@@ -19,7 +21,7 @@ pub const fn get_default_keymap() -> [[[KeyAction; COL]; ROW]; NUM_LAYER] {
             [k!(Z), k!(X), k!(C), k!(V)],
             [k!(Kc1), k!(Kc2), k!(Kc3), k!(Kc4)],
             [k!(Q), k!(W), k!(E), k!(R)],
-            [to!(0), to!(2), to!(4), mn!(Ch1, C4, Velocity::MAX)],
+            [mto!(0, 0), mto!(1, 2), mto!(2, 4), mn!(Ch1, C4, Velocity::MAX)],
             [mo!(1), k!(Space), k!(Right), k!(N)]
         ]),
         // Sample Modifier layer
@@ -37,7 +39,7 @@ pub const fn get_default_keymap() -> [[[KeyAction; COL]; ROW]; NUM_LAYER] {
             [k!(Z), k!(X), k!(C), k!(V)],
             [k!(Kc1), k!(Kc2), k!(Kc3), k!(Kc4)],
             [k!(Q), k!(W), k!(E), k!(R)],
-            [to!(0), to!(2), to!(4), mn!(Ch1, C4, Velocity::MAX)],
+            [mto!(0, 0), mto!(1, 2), mto!(2, 4), mn!(Ch1, C4, Velocity::MAX)],
             [mo!(3), k!(Space), k!(Right), k!(N)]
         ]),
         // Sequence Modifier Layer
@@ -55,7 +57,7 @@ pub const fn get_default_keymap() -> [[[KeyAction; COL]; ROW]; NUM_LAYER] {
             [k!(No), k!(No), k!(No), k!(No)],
             [k!(Y), k!(U), k!(I), k!(O)],
             [k!(H), k!(J), k!(K), k!(L)],
-            [to!(0), to!(2), to!(4), mn!(Ch1, C4, Velocity::MAX)],
+            [mto!(0, 0), mto!(1, 2), mto!(2, 4), mn!(Ch1, C4, Velocity::MAX)],
             [mo!(5), k!(Space), k!(Right), k!(N)]
         ]),
         // Perform Modifier layer
@@ -64,7 +66,7 @@ pub const fn get_default_keymap() -> [[[KeyAction; COL]; ROW]; NUM_LAYER] {
             [k!(No), k!(No), k!(No), k!(No)],
             [k!(No), k!(No), k!(No), k!(No)],
             [k!(No), k!(No), k!(No), k!(No)],
-            [to!(0), to!(2), to!(4), mn!(Ch1, C4, Velocity::MAX)],
+            [mto!(0, 0), mto!(1, 2), mto!(2, 4), mn!(Ch1, C4, Velocity::MAX)],
             [k!(No), k!(Space), k!(Right), k!(N)]
         ]),
     ]
@@ -74,59 +76,71 @@ pub const fn get_default_encoder_map() -> [[EncoderAction; NUM_ENCODER]; NUM_LAY
     [
         [
             encoder!(
-                mcci!(Ch1, MidiCC::MODULATION_WHEEL, 5),
-                mccd!(Ch1, MidiCC::MODULATION_WHEEL, 5)
+                mcci!(Ch1, MidiCC::MODULATION_WHEEL, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::MODULATION_WHEEL, DEFAULT_CC_INCREMENT)
             ),
             encoder!(
-                mcci!(Ch1, MidiCC::BREATH_CONTROLLER, 5),
-                mccd!(Ch1, MidiCC::BREATH_CONTROLLER, 5)
-            ),
-            encoder!(mcci!(Ch1, MidiCC::UNDEFINED_3, 5), mccd!(Ch1, MidiCC::UNDEFINED_3, 5)),
-            encoder!(
-                mcci!(Ch1, MidiCC::FOOT_CONTROLLER, 5),
-                mccd!(Ch1, MidiCC::FOOT_CONTROLLER, 5)
+                mcci!(Ch1, MidiCC::BREATH_CONTROLLER, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::BREATH_CONTROLLER, DEFAULT_CC_INCREMENT)
             ),
             encoder!(
-                mcci!(Ch1, MidiCC::PORTAMENTO_TIME, 5),
-                mccd!(Ch1, MidiCC::PORTAMENTO_TIME, 5)
+                mcci!(Ch1, MidiCC::UNDEFINED_3, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::UNDEFINED_3, DEFAULT_CC_INCREMENT)
             ),
             encoder!(
-                mcci!(Ch1, MidiCC::DATA_ENTRY_MSB, 5),
-                mccd!(Ch1, MidiCC::DATA_ENTRY_MSB, 5)
+                mcci!(Ch1, MidiCC::FOOT_CONTROLLER, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::FOOT_CONTROLLER, DEFAULT_CC_INCREMENT)
             ),
             encoder!(
-                mcci!(Ch1, MidiCC::CHANNEL_VOLUME, 5),
-                mccd!(Ch1, MidiCC::CHANNEL_VOLUME, 5)
+                mcci!(Ch1, MidiCC::PORTAMENTO_TIME, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::PORTAMENTO_TIME, DEFAULT_CC_INCREMENT)
             ),
-            encoder!(mcci!(Ch1, MidiCC::BALANCE, 5), mccd!(Ch1, MidiCC::BALANCE, 5)),
+            encoder!(
+                mcci!(Ch1, MidiCC::DATA_ENTRY_MSB, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::DATA_ENTRY_MSB, DEFAULT_CC_INCREMENT)
+            ),
+            encoder!(
+                mcci!(Ch1, MidiCC::CHANNEL_VOLUME, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::CHANNEL_VOLUME, DEFAULT_CC_INCREMENT)
+            ),
+            encoder!(
+                mcci!(Ch1, MidiCC::BALANCE, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::BALANCE, DEFAULT_CC_INCREMENT)
+            ),
         ],
         [
             encoder!(
-                mcci!(Ch1, MidiCC::MODULATION_WHEEL, 5),
-                mccd!(Ch1, MidiCC::MODULATION_WHEEL, 5)
+                mcci!(Ch1, MidiCC::MODULATION_WHEEL, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::MODULATION_WHEEL, DEFAULT_CC_INCREMENT)
             ),
             encoder!(
-                mcci!(Ch1, MidiCC::BREATH_CONTROLLER, 5),
-                mccd!(Ch1, MidiCC::BREATH_CONTROLLER, 5)
-            ),
-            encoder!(mcci!(Ch1, MidiCC::UNDEFINED_3, 5), mccd!(Ch1, MidiCC::UNDEFINED_3, 5)),
-            encoder!(
-                mcci!(Ch1, MidiCC::FOOT_CONTROLLER, 5),
-                mccd!(Ch1, MidiCC::FOOT_CONTROLLER, 5)
+                mcci!(Ch1, MidiCC::BREATH_CONTROLLER, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::BREATH_CONTROLLER, DEFAULT_CC_INCREMENT)
             ),
             encoder!(
-                mcci!(Ch1, MidiCC::PORTAMENTO_TIME, 5),
-                mccd!(Ch1, MidiCC::PORTAMENTO_TIME, 5)
+                mcci!(Ch1, MidiCC::UNDEFINED_3, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::UNDEFINED_3, DEFAULT_CC_INCREMENT)
             ),
             encoder!(
-                mcci!(Ch1, MidiCC::DATA_ENTRY_MSB, 5),
-                mccd!(Ch1, MidiCC::DATA_ENTRY_MSB, 5)
+                mcci!(Ch1, MidiCC::FOOT_CONTROLLER, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::FOOT_CONTROLLER, DEFAULT_CC_INCREMENT)
             ),
             encoder!(
-                mcci!(Ch1, MidiCC::CHANNEL_VOLUME, 5),
-                mccd!(Ch1, MidiCC::CHANNEL_VOLUME, 5)
+                mcci!(Ch1, MidiCC::PORTAMENTO_TIME, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::PORTAMENTO_TIME, DEFAULT_CC_INCREMENT)
             ),
-            encoder!(mcci!(Ch1, MidiCC::BALANCE, 5), mccd!(Ch1, MidiCC::BALANCE, 5)),
+            encoder!(
+                mcci!(Ch1, MidiCC::DATA_ENTRY_MSB, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::DATA_ENTRY_MSB, DEFAULT_CC_INCREMENT)
+            ),
+            encoder!(
+                mcci!(Ch1, MidiCC::CHANNEL_VOLUME, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::CHANNEL_VOLUME, DEFAULT_CC_INCREMENT)
+            ),
+            encoder!(
+                mcci!(Ch1, MidiCC::BALANCE, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::BALANCE, DEFAULT_CC_INCREMENT)
+            ),
         ],
         // No-op Sequence layer
         [
@@ -150,45 +164,72 @@ pub const fn get_default_encoder_map() -> [[EncoderAction; NUM_ENCODER]; NUM_LAY
             encoder!(k!(No), k!(No)),
         ],
         [
-            encoder!(mcci!(Ch1, MidiCC::BALANCE, 5), mccd!(Ch1, MidiCC::BALANCE, 5)),
-            encoder!(mcci!(Ch1, MidiCC::UNDEFINED_9, 5), mccd!(Ch1, MidiCC::UNDEFINED_9, 5)),
-            encoder!(mcci!(Ch1, MidiCC::PAN, 5), mccd!(Ch1, MidiCC::PAN, 5)),
             encoder!(
-                mcci!(Ch1, MidiCC::EXPRESSION_CONTROLLER, 5),
-                mccd!(Ch1, MidiCC::EXPRESSION_CONTROLLER, 5)
+                mcci!(Ch1, MidiCC::UNDEFINED_24, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::UNDEFINED_24, DEFAULT_CC_INCREMENT)
             ),
             encoder!(
-                mcci!(Ch1, MidiCC::EFFECT_CONTROL_1, 5),
-                mccd!(Ch1, MidiCC::EFFECT_CONTROL_1, 5)
+                mcci!(Ch1, MidiCC::UNDEFINED_9, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::UNDEFINED_9, DEFAULT_CC_INCREMENT)
             ),
             encoder!(
-                mcci!(Ch1, MidiCC::EFFECT_CONTROL_2, 5),
-                mccd!(Ch1, MidiCC::EFFECT_CONTROL_2, 5)
+                mcci!(Ch1, MidiCC::PAN, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::PAN, DEFAULT_CC_INCREMENT)
             ),
-            encoder!(mcci!(Ch1, MidiCC::UNDEFINED_14, 5), mccd!(Ch1, MidiCC::UNDEFINED_14, 5)),
-            encoder!(mcci!(Ch1, MidiCC::UNDEFINED_15, 5), mccd!(Ch1, MidiCC::UNDEFINED_15, 5)),
+            encoder!(
+                mcci!(Ch1, MidiCC::EXPRESSION_CONTROLLER, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::EXPRESSION_CONTROLLER, DEFAULT_CC_INCREMENT)
+            ),
+            encoder!(
+                mcci!(Ch1, MidiCC::EFFECT_CONTROL_1, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::EFFECT_CONTROL_1, DEFAULT_CC_INCREMENT)
+            ),
+            encoder!(
+                mcci!(Ch1, MidiCC::EFFECT_CONTROL_2, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::EFFECT_CONTROL_2, DEFAULT_CC_INCREMENT)
+            ),
+            encoder!(
+                mcci!(Ch1, MidiCC::UNDEFINED_14, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::UNDEFINED_14, DEFAULT_CC_INCREMENT)
+            ),
+            encoder!(
+                mcci!(Ch1, MidiCC::UNDEFINED_15, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::UNDEFINED_15, DEFAULT_CC_INCREMENT)
+            ),
         ],
         [
             encoder!(
-                mcci!(Ch1, MidiCC::GENERAL_PURPOSE_CONTROLLER_1, 5),
-                mccd!(Ch1, MidiCC::GENERAL_PURPOSE_CONTROLLER_1, 5)
+                mcci!(Ch1, MidiCC::GENERAL_PURPOSE_CONTROLLER_1, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::GENERAL_PURPOSE_CONTROLLER_1, DEFAULT_CC_INCREMENT)
             ),
             encoder!(
-                mcci!(Ch1, MidiCC::GENERAL_PURPOSE_CONTROLLER_2, 5),
-                mccd!(Ch1, MidiCC::GENERAL_PURPOSE_CONTROLLER_2, 5)
+                mcci!(Ch1, MidiCC::GENERAL_PURPOSE_CONTROLLER_2, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::GENERAL_PURPOSE_CONTROLLER_2, DEFAULT_CC_INCREMENT)
             ),
             encoder!(
-                mcci!(Ch1, MidiCC::GENERAL_PURPOSE_CONTROLLER_3, 5),
-                mccd!(Ch1, MidiCC::GENERAL_PURPOSE_CONTROLLER_3, 5)
+                mcci!(Ch1, MidiCC::GENERAL_PURPOSE_CONTROLLER_3, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::GENERAL_PURPOSE_CONTROLLER_3, DEFAULT_CC_INCREMENT)
             ),
             encoder!(
-                mcci!(Ch1, MidiCC::GENERAL_PURPOSE_CONTROLLER_4, 5),
-                mccd!(Ch1, MidiCC::GENERAL_PURPOSE_CONTROLLER_4, 5)
+                mcci!(Ch1, MidiCC::GENERAL_PURPOSE_CONTROLLER_4, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::GENERAL_PURPOSE_CONTROLLER_4, DEFAULT_CC_INCREMENT)
             ),
-            encoder!(mcci!(Ch1, MidiCC::UNDEFINED_20, 5), mccd!(Ch1, MidiCC::UNDEFINED_20, 5)),
-            encoder!(mcci!(Ch1, MidiCC::UNDEFINED_21, 5), mccd!(Ch1, MidiCC::UNDEFINED_21, 5)),
-            encoder!(mcci!(Ch1, MidiCC::UNDEFINED_22, 5), mccd!(Ch1, MidiCC::UNDEFINED_22, 5)),
-            encoder!(mcci!(Ch1, MidiCC::UNDEFINED_23, 5), mccd!(Ch1, MidiCC::UNDEFINED_23, 5)),
+            encoder!(
+                mcci!(Ch1, MidiCC::UNDEFINED_20, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::UNDEFINED_20, DEFAULT_CC_INCREMENT)
+            ),
+            encoder!(
+                mcci!(Ch1, MidiCC::UNDEFINED_21, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::UNDEFINED_21, DEFAULT_CC_INCREMENT)
+            ),
+            encoder!(
+                mcci!(Ch1, MidiCC::UNDEFINED_22, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::UNDEFINED_22, DEFAULT_CC_INCREMENT)
+            ),
+            encoder!(
+                mcci!(Ch1, MidiCC::UNDEFINED_23, DEFAULT_CC_INCREMENT),
+                mccd!(Ch1, MidiCC::UNDEFINED_23, DEFAULT_CC_INCREMENT)
+            ),
         ],
     ]
 }

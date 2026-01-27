@@ -25,18 +25,23 @@ use rand_chacha::ChaCha12Rng;
 use rand_core::SeedableRng;
 use rmk::ble::build_ble_stack;
 use rmk::channel::EVENT_CHANNEL;
+use rmk::config::macro_config::KeyboardMacrosConfig;
 use rmk::config::{
     BehaviorConfig, BleBatteryConfig, DeviceConfig, PositionalConfig, RmkConfig, StorageConfig, VialConfig,
 };
 use rmk::debounce::default_debouncer::DefaultDebouncer;
 use rmk::direct_pin::{DirectPinMatrix, PisoPreScan};
 use rmk::futures::future::join4;
+use rmk::heapless::Vec;
 use rmk::input_device::Runnable;
 use rmk::input_device::adc::{AnalogEventType, NrfAdc};
 use rmk::input_device::battery::BatteryProcessor;
 use rmk::input_device::piso_shift_reg::{SharedPisoShiftReg, SharedPisoShiftRegPin};
 use rmk::input_device::rotary_encoder::{RotaryEncoder, RotaryEncoderRunner};
 use rmk::keyboard::Keyboard;
+use rmk::keyboard_macros::MacroOperation;
+use rmk::keyboard_macros::define_macro_sequences;
+use rmk::types::keycode::KeyCode;
 use rmk::{HostResources, initialize_encoder_keymap_and_storage, run_devices, run_processor_chain, run_rmk};
 use static_cell::StaticCell;
 use vial::{VIAL_KEYBOARD_DEF, VIAL_KEYBOARD_ID};
@@ -234,11 +239,38 @@ async fn main(spawner: Spawner) {
         storage_config,
     };
 
+    let macros = define_macro_sequences(&[
+        Vec::from_slice(&[
+            MacroOperation::Press(KeyCode::LShift),
+            MacroOperation::Tap(KeyCode::Tab),
+            MacroOperation::Tap(KeyCode::Tab),
+            MacroOperation::Tap(KeyCode::Tab),
+            MacroOperation::Release(KeyCode::LShift),
+        ])
+        .expect("too many elements"),
+        Vec::from_slice(&[
+            MacroOperation::Press(KeyCode::LShift),
+            MacroOperation::Tap(KeyCode::Tab),
+            MacroOperation::Tap(KeyCode::Tab),
+            MacroOperation::Tap(KeyCode::Tab),
+            MacroOperation::Release(KeyCode::LShift),
+            MacroOperation::Tap(KeyCode::Tab),
+        ])
+        .expect("too many elements"),
+        Vec::from_slice(&[
+            MacroOperation::Tap(KeyCode::Tab),
+            MacroOperation::Tap(KeyCode::Tab),
+            MacroOperation::Tap(KeyCode::Tab),
+        ])
+        .expect("too many elements"),
+    ]);
+
     // Initialze keyboard stuffs
     // Initialize the storage and keymap
     let mut default_keymap = keymap::get_default_keymap();
     let mut key_config = PositionalConfig::default();
     let mut behavior_config = BehaviorConfig::default();
+    behavior_config.keyboard_macros = KeyboardMacrosConfig::new(macros);
     let mut encoder_map = keymap::get_default_encoder_map();
     let (keymap, mut storage) = initialize_encoder_keymap_and_storage(
         &mut default_keymap,

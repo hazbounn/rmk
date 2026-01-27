@@ -241,6 +241,8 @@ pub enum KeyAction {
     Single(Action),
     /// Don't wait the release of the key, auto-release after a time threshold.
     Tap(Action),
+    /// Execute two actions in order for the same key event.
+    Composite(Action, Action),
     /// Tap hold action    
     TapHold(Action, Action, MorseProfile),
 
@@ -349,6 +351,7 @@ impl PartialEq for KeyAction {
             (KeyAction::Transparent, KeyAction::Transparent) => true,
             (KeyAction::Single(a), KeyAction::Single(b)) => a == b,
             (KeyAction::Tap(a), KeyAction::Tap(b)) => a == b,
+            (KeyAction::Composite(a1, a2), KeyAction::Composite(b1, b2)) => a1 == b1 && a2 == b2,
             (KeyAction::TapHold(a, b, _), KeyAction::TapHold(c, d, _)) => a == c && b == d,
             (KeyAction::Morse(a), KeyAction::Morse(b)) => a == b,
             _ => false,

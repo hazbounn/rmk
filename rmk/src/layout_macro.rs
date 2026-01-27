@@ -35,6 +35,14 @@ macro_rules! a {
     };
 }
 
+/// Create a composite key action from two actions.
+#[macro_export]
+macro_rules! ca {
+    ($first: expr, $second: expr $(,)?) => {
+        $crate::types::action::KeyAction::Composite($first, $second)
+    };
+}
+
 /// Create a layer activate action. For example, `mo!(1)` activates layer 1.
 #[macro_export]
 macro_rules! mo {
@@ -224,6 +232,17 @@ macro_rules! morse {
 macro_rules! macros {
     ($index: literal) => {
         $crate::types::action::KeyAction::Single($crate::types::action::Action::TriggerMacro($index))
+    };
+}
+
+/// Create a macro trigger + layer toggle only composite action.
+#[macro_export]
+macro_rules! mto {
+    ($index: literal, $layer: literal) => {
+        $crate::ca!(
+            $crate::types::action::Action::TriggerMacro($index),
+            $crate::types::action::Action::LayerToggleOnly($layer)
+        )
     };
 }
 

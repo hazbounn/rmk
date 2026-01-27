@@ -573,6 +573,10 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
                                 KeyAction::Tap(action) => {
                                     self.process_key_action_tap(action, held_key.event).await;
                                 }
+                                KeyAction::Composite(first, second) => {
+                                    self.process_key_action_normal(first, held_key.event).await;
+                                    self.process_key_action_normal(second, held_key.event).await;
+                                }
                                 _ => unreachable!(),
                             }
                         } else {
@@ -799,6 +803,14 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
                     self.process_key_action_normal(action, event).await;
                 }
                 KeyAction::Tap(action) => self.process_key_action_tap(action, event).await,
+                KeyAction::Composite(first, second) => {
+                    debug!(
+                        "Process Composite key action: {:?} then {:?}, {:?}",
+                        first, second, event
+                    );
+                    self.process_key_action_normal(first, event).await;
+                    self.process_key_action_normal(second, event).await;
+                }
                 _ => unreachable!(),
             }
         } else {

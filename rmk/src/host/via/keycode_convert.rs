@@ -59,6 +59,10 @@ pub(crate) fn to_via_keycode(key_action: KeyAction) -> u16 {
             warn!("Tap action is not supported by via");
             0
         }
+        KeyAction::Composite(_, _) => {
+            warn!("Composite action is not supported by via");
+            0
+        }
         KeyAction::TapHold(tap, hold, _) => match hold {
             Action::LayerOn(l) => {
                 if l > 16 {
