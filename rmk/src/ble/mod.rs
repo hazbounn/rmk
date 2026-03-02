@@ -259,7 +259,7 @@ pub(crate) async fn run_ble<
             );
             let adv_fut = advertise(product_name, &mut peripheral, &server);
             // USB + BLE dual mode
-            #[cfg(not(feature = "_no_usb"))]
+#[cfg(not(feature = "_no_usb"))]
             {
                 match get_connection_type() {
                     ConnectionType::Usb => {
@@ -360,6 +360,55 @@ pub(crate) async fn run_ble<
                             UsbLedReader::new(&mut keyboard_reader),
                             UsbKeyboardWriter::new(&mut keyboard_writer, &mut other_writer),
                         );
+                        #[cfg(feature = "ble-midi")]
+                        match select4(adv_fut, usb_fut, profile_manager.update_profile(), run_midi_drain()).await {
+                            Either4::First(Ok(conn)) => {
+                                info!("BLE connected, running BLE keyboard");
+                                select(
+                                    run_ble_keyboard(
+                                        &server,
+                                        &conn,
+                                        stack,
+                                        &mut peripheral,
+                                        product_name,
+                                        #[cfg(feature = "host")]
+                                        keymap,
+                                        #[cfg(feature = "host")]
+                                        &mut rmk_config,
+                                        #[cfg(feature = "storage")]
+                                        storage,
+                                    ),
+                                    profile_manager.update_profile(),
+                                )
+                                .await;
+                            }
+                            Either4::First(Err(BleHostError::BleHost(Error::Timeout))) => {
+                                warn!("Advertising timeout, sleep and wait for any key");
+
+                                #[cfg(feature = "controller")]
+                                send_controller_event(
+                                    &mut controller_pub,
+                                    ControllerEvent::BleState(0, BleState::None),
+                                );
+                                // Set CONNECTION_STATE to true to keep receiving messages from the peripheral
+                                CONNECTION_STATE.store(ConnectionState::Connected.into(), Ordering::Release);
+
+                                // Enter sleep mode to reduce the power consumption
+                                #[cfg(feature = "split")]
+                                CENTRAL_SLEEP.signal(true);
+
+                                // Wait for the keyboard report for wake the keyboard
+                                let _ = KEYBOARD_REPORT_CHANNEL.receive().await;
+
+                                // Quit from sleep mode
+                                #[cfg(feature = "split")]
+                                CENTRAL_SLEEP.signal(false);
+
+                                continue;
+                            }
+                            _ => {}
+                        }
+                        #[cfg(not(feature = "ble-midi"))]
                         match select3(adv_fut, usb_fut, profile_manager.update_profile()).await {
                             Either3::First(Ok(conn)) => {
                                 info!("BLE connected, running BLE keyboard");
@@ -412,49 +461,101 @@ pub(crate) async fn run_ble<
             }
 
             #[cfg(feature = "_no_usb")]
-            match adv_fut.await {
-                Ok(conn) => {
-                    // BLE connected
-                    select(
-                        run_ble_keyboard(
-                            &server,
-                            &conn,
-                            stack,
-                            &mut peripheral,
-                            product_name,
-                            #[cfg(feature = "host")]
-                            keymap,
-                            #[cfg(feature = "host")]
-                            &mut rmk_config,
-                            #[cfg(feature = "storage")]
-                            storage,
-                        ),
-                        profile_manager.update_profile(),
-                    )
-                    .await;
+            {
+                #[cfg(feature = "ble-midi")]
+                match select(adv_fut, run_midi_drain()).await {
+                    embassy_futures::select::Either::First(Ok(conn)) => {
+                        // BLE connected
+                        select(
+                            run_ble_keyboard(
+                                &server,
+                                &conn,
+                                stack,
+                                &mut peripheral,
+                                product_name,
+                                #[cfg(feature = "host")]
+                                keymap,
+                                #[cfg(feature = "host")]
+                                &mut rmk_config,
+                                #[cfg(feature = "storage")]
+                                storage,
+                            ),
+                            profile_manager.update_profile(),
+                        )
+                        .await;
+                    }
+                    embassy_futures::select::Either::First(Err(BleHostError::BleHost(Error::Timeout))) => {
+                        warn!("Advertising timeout, sleep and wait for any key");
+
+                        // Set CONNECTION_STATE to true to keep receiving messages from the peripheral
+                        CONNECTION_STATE.store(ConnectionState::Connected.into(), Ordering::Release);
+
+                        // Enter sleep mode to reduce the power consumption
+                        #[cfg(feature = "split")]
+                        CENTRAL_SLEEP.signal(true);
+
+                        // Wait for the keyboard report for wake the keyboard
+                        let _ = KEYBOARD_REPORT_CHANNEL.receive().await;
+
+                        // Quit from sleep mode
+                        #[cfg(feature = "split")]
+                        CENTRAL_SLEEP.signal(false);
+                        continue;
+                    }
+                    embassy_futures::select::Either::First(Err(e)) => {
+                        #[cfg(feature = "defmt")]
+                        let e = defmt::Debug2Format(&e);
+                        error!("Advertise error: {:?}", e);
+                    }
+                    embassy_futures::select::Either::Second(_) => {
+                        unreachable!("midi drain task should not complete");
+                    }
                 }
-                Err(BleHostError::BleHost(Error::Timeout)) => {
-                    warn!("Advertising timeout, sleep and wait for any key");
+                #[cfg(not(feature = "ble-midi"))]
+                match adv_fut.await {
+                    Ok(conn) => {
+                        // BLE connected
+                        select(
+                            run_ble_keyboard(
+                                &server,
+                                &conn,
+                                stack,
+                                &mut peripheral,
+                                product_name,
+                                #[cfg(feature = "host")]
+                                keymap,
+                                #[cfg(feature = "host")]
+                                &mut rmk_config,
+                                #[cfg(feature = "storage")]
+                                storage,
+                            ),
+                            profile_manager.update_profile(),
+                        )
+                        .await;
+                    }
+                    Err(BleHostError::BleHost(Error::Timeout)) => {
+                        warn!("Advertising timeout, sleep and wait for any key");
 
-                    // Set CONNECTION_STATE to true to keep receiving messages from the peripheral
-                    CONNECTION_STATE.store(ConnectionState::Connected.into(), Ordering::Release);
+                        // Set CONNECTION_STATE to true to keep receiving messages from the peripheral
+                        CONNECTION_STATE.store(ConnectionState::Connected.into(), Ordering::Release);
 
-                    // Enter sleep mode to reduce the power consumption
-                    #[cfg(feature = "split")]
-                    CENTRAL_SLEEP.signal(true);
+                        // Enter sleep mode to reduce the power consumption
+                        #[cfg(feature = "split")]
+                        CENTRAL_SLEEP.signal(true);
 
-                    // Wait for the keyboard report for wake the keyboard
-                    let _ = KEYBOARD_REPORT_CHANNEL.receive().await;
+                        // Wait for the keyboard report for wake the keyboard
+                        let _ = KEYBOARD_REPORT_CHANNEL.receive().await;
 
-                    // Quit from sleep mode
-                    #[cfg(feature = "split")]
-                    CENTRAL_SLEEP.signal(false);
-                    continue;
-                }
-                Err(e) => {
-                    #[cfg(feature = "defmt")]
-                    let e = defmt::Debug2Format(&e);
-                    error!("Advertise error: {:?}", e);
+                        // Quit from sleep mode
+                        #[cfg(feature = "split")]
+                        CENTRAL_SLEEP.signal(false);
+                        continue;
+                    }
+                    Err(e) => {
+                        #[cfg(feature = "defmt")]
+                        let e = defmt::Debug2Format(&e);
+                        error!("Advertise error: {:?}", e);
+                    }
                 }
             }
 
@@ -839,9 +940,13 @@ pub(crate) async fn run_dummy_keyboard<
     #[cfg(feature = "storage")]
     let storage_fut = storage.run();
     let mut dummy_writer = DummyWriter {};
-    #[cfg(feature = "storage")]
+    #[cfg(all(feature = "storage", feature = "ble-midi"))]
+    select3(storage_fut, dummy_writer.run_writer(), run_midi_drain()).await;
+    #[cfg(all(feature = "storage", not(feature = "ble-midi")))]
     select(storage_fut, dummy_writer.run_writer()).await;
-    #[cfg(not(feature = "storage"))]
+    #[cfg(all(not(feature = "storage"), feature = "ble-midi"))]
+    join(dummy_writer.run_writer(), run_midi_drain()).await;
+    #[cfg(all(not(feature = "storage"), not(feature = "ble-midi")))]
     dummy_writer.run_writer().await;
 }
 
@@ -1068,12 +1173,14 @@ async fn run_ble_midi_dispatch<'stack, 'server, 'conn, P: PacketPool>(
 
     let midi = midi::BleMidiServer::new(server, conn);
     info!("[midi] connected");
-    midi::wait_for_notify_enabled().await;
-    info!("[midi] notify enabled");
 
     let mut translator = crate::midi::MidiTranslator::new();
     loop {
         let event = MIDI_EVENT_CHANNEL.receive().await;
+        if !midi::MIDI_NOTIFY_STATE.load(Ordering::Acquire) {
+            // Drain queue while notifications are disabled.
+            continue;
+        }
         let Some(bytes) = translator.action_to_bytes(event.action, event.pressed) else {
             continue;
         };
@@ -1088,6 +1195,15 @@ async fn run_ble_midi_dispatch<'stack, 'server, 'conn, P: PacketPool>(
         if let Err(e) = midi.send_midi(&packet).await {
             warn!("[midi] send error: {:?}", e);
         }
+    }
+}
+
+#[cfg(feature = "ble-midi")]
+async fn run_midi_drain() {
+    use crate::channel::MIDI_EVENT_CHANNEL;
+
+    loop {
+        let _ = MIDI_EVENT_CHANNEL.receive().await;
     }
 }
 

@@ -4,10 +4,10 @@ use usbd_hid::descriptor::SerializedDescriptor;
 
 use super::battery_service::BatteryService;
 use super::device_info::DeviceConfigrmationService;
-#[cfg(feature = "ble-midi")]
-use super::midi::MidiService;
 #[cfg(feature = "host")]
 use super::host_service::HostService;
+#[cfg(feature = "ble-midi")]
+use super::midi::MidiService;
 use crate::channel::KEYBOARD_REPORT_CHANNEL;
 use crate::descriptor::{CompositeReport, CompositeReportType, KeyboardReport};
 use crate::hid::{HidError, HidWriterTrait, Report, RunnableHidWriter};

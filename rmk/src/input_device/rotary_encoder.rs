@@ -1,10 +1,10 @@
 //! General rotary encoder
 //!
 //! The rotary encoder implementation is adapted from: <https://github.com/leshow/rotary-encoder-hal/blob/master/src/lib.rs>
+use embassy_time::Timer;
 use embedded_hal::digital::InputPin;
 #[cfg(feature = "async_matrix")]
 use embedded_hal_async::digital::Wait;
-use embassy_time::Timer;
 use postcard::experimental::max_size::MaxSize;
 use serde::{Deserialize, Serialize};
 
@@ -326,7 +326,7 @@ where
             }
 
             for idx in idx_start..self.encoders.len() {
-                let encoder = self.encoders.get_mut(idx).unwrap();
+                let encoder = self.encoders.get_mut(idx).expect("Index should be in range");
 
                 if let Some(last_action) = encoder.last_action {
                     Timer::after_millis(5).await;
