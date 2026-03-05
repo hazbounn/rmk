@@ -259,7 +259,7 @@ pub(crate) async fn run_ble<
             );
             let adv_fut = advertise(product_name, &mut peripheral, &server);
             // USB + BLE dual mode
-#[cfg(not(feature = "_no_usb"))]
+            #[cfg(not(feature = "_no_usb"))]
             {
                 match get_connection_type() {
                     ConnectionType::Usb => {

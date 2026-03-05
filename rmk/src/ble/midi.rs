@@ -21,7 +21,13 @@ pub(crate) static MIDI_NOTIFY_SIGNAL: Signal<RawMutex, bool> = Signal::new();
 
 #[gatt_service(uuid = "03b80e5a-ede8-4b33-a751-6ce34ec4c700")]
 pub(crate) struct MidiService {
-    #[characteristic(uuid = "7772e5db-3868-4112-a1a9-f2669d106bf3", notify, write, write_without_response)]
+    #[characteristic(
+        uuid = "7772e5db-3868-4112-a1a9-f2669d106bf3",
+        notify,
+        write,
+        write_without_response,
+        read
+    )]
     pub(crate) midi_io: Vec<u8, MIDI_IO_MAX_LEN>,
 }
 
