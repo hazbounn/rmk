@@ -10,6 +10,7 @@
 //! - The shift register is shared between tasks and updated via `update().await`, and
 //! - Other drivers need to own `InputPin`-style objects that read from the cached snapshot.
 use embassy_sync::mutex::Mutex;
+use embassy_time::Timer;
 use embedded_hal::digital::{Error, ErrorKind, ErrorType, InputPin, OutputPin};
 use embedded_hal_async::spi::SpiBus as AsyncSpiBus;
 
@@ -63,9 +64,15 @@ where
     /// The function is async and may yield while waiting for the SPI transfer to complete.
     pub async fn update(&mut self) -> Result<(), PisoShiftRegError<Spi::Error, LoadPin::Error>> {
         self.load_pin.set_low().map_err(PisoShiftRegError::Gpio)?;
+        // Not strictly necessary, but low cost guarantee of a latch.
+        Timer::after_micros(1).await;
         self.load_pin.set_high().map_err(PisoShiftRegError::Gpio)?;
 
-        self.spi.read(&mut self.state).await.map_err(PisoShiftRegError::Spi)
+        // Use full-duplex transfer so backends that mishandle RX-only reads still emit SCK.
+        self.spi
+            .transfer_in_place(&mut self.state)
+            .await
+            .map_err(PisoShiftRegError::Spi)
     }
 
     /// Check if a specific pin is high in the internal snapshot.

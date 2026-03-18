@@ -160,30 +160,6 @@ async fn main(spawner: Spawner) {
     // Initialize flash
     let flash = Flash::take(mpsl, p.NVMC);
 
-    // Shift register config for direct pins.
-    let mut button_spi_config = spim::Config::default();
-    button_spi_config.frequency = spim::Frequency::M1;
-    button_spi_config.bit_order = spim::BitOrder::MSB_FIRST;
-    let spim = spim::Spim::new(p.SPI3, Irqs, p.P1_08, p.P1_02, p.P1_10, button_spi_config);
-    let button_shift_register = SharedPisoShiftReg::<_, _, BUTTON_BITS, BUTTON_BYTES>::new(
-        Output::new(p.P1_01, Level::High, OutputDrive::Standard),
-        spim,
-    )
-    .unwrap();
-
-    let pre_scan = PisoPreScan {
-        piso: &button_shift_register,
-    };
-
-    let mut direct_pins: [[Option<_>; COL]; ROW] = core::array::from_fn(|_| core::array::from_fn(|_| None));
-    let mut pin_idx = 0;
-    for row_idx in 0..ROW {
-        for col_idx in 0..COL {
-            direct_pins[row_idx][col_idx] = Some(button_shift_register.pin(pin_idx));
-            pin_idx += 1;
-        }
-    }
-
     let mut encoder_spi_config = spim::Config::default();
     encoder_spi_config.frequency = spim::Frequency::M1;
     encoder_spi_config.bit_order = spim::BitOrder::MSB_FIRST;
@@ -282,11 +258,33 @@ async fn main(spawner: Spawner) {
     )
     .await;
 
+    // NOTE: SPI3 must be the last device to be initialized. Otherwise, when there is no rtt session
+    // active, the peripheral will SILENTLY fail (no error, no clk pulses) and the matrix will not work.
+    let mut button_spi_config = spim::Config::default();
+    button_spi_config.frequency = spim::Frequency::M1;
+    button_spi_config.bit_order = spim::BitOrder::MSB_FIRST;
+    let spim = spim::Spim::new(p.SPI3, Irqs, p.P1_08, p.P1_02, p.P1_10, button_spi_config);
+    let button_shift_register = SharedPisoShiftReg::<_, _, BUTTON_BITS, BUTTON_BYTES>::new(
+        Output::new(p.P1_01, Level::High, OutputDrive::Standard),
+        spim,
+    )
+    .unwrap();
+    let pre_scan = PisoPreScan {
+        piso: &button_shift_register,
+    };
+    let mut direct_pins: [[Option<_>; COL]; ROW] = core::array::from_fn(|_| core::array::from_fn(|_| None));
+    let mut pin_idx = 0;
+    for row_idx in 0..ROW {
+        for col_idx in 0..COL {
+            direct_pins[row_idx][col_idx] = Some(button_shift_register.pin(pin_idx));
+            pin_idx += 1;
+        }
+    }
+
     // Initialize the matrix and keyboard
     let debouncer = DefaultDebouncer::new();
     let mut matrix =
         DirectPinMatrix::<_, _, ROW, COL, BUTTON_BITS, _>::new_with_hook(direct_pins, debouncer, true, pre_scan);
-    // let mut matrix = TestMatrix::<ROW, COL>::new();
     let mut keyboard = Keyboard::new(&keymap);
 
     let mut adc_device = NrfAdc::new(

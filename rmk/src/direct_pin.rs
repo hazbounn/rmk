@@ -34,11 +34,21 @@ where
     Spi: embedded_hal_async::spi::SpiBus,
 {
     async fn pre_scan(&mut self) {
-        let _ = self.piso.update().await;
+        let result = self.piso.update().await;
+        if let Err(e) = result {
+            match e {
+                crate::input_device::piso_shift_reg::PisoShiftRegError::Gpio(gpio_err) => {
+                    error!("PISO pre-scan GPIO error");
+                }
+                crate::input_device::piso_shift_reg::PisoShiftRegError::Spi(spi_err) => {
+                    error!("PISO pre-scan SPI error");
+                }
+            }
+        }
     }
 }
 
-/// DirectPinMartex only has input pins.
+/// DirectPinMatrix only has input pins.
 pub struct DirectPinMatrix<
     #[cfg(feature = "async_matrix")] In: Wait + InputPin,
     #[cfg(not(feature = "async_matrix"))] In: InputPin,
@@ -123,6 +133,7 @@ impl<
 {
     async fn read_event(&mut self) -> crate::event::Event {
         loop {
+            // debug!("Alive matrix");
             let (row_idx_start, col_idx_start) = self.scan_pos;
             let fresh_scan = self.scan_pos == (0, 0);
 
