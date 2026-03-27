@@ -246,6 +246,24 @@ macro_rules! mto {
     };
 }
 
+/// Create a MIDI note + layer toggle only composite action (channel is a wmidi::Channel).
+#[macro_export]
+macro_rules! mnto {
+    ($ch: expr, $note: expr, $layer: literal) => {
+        $crate::mnto!($ch, $note, $crate::wmidi::Velocity::from_u8_lossy(64), $layer)
+    };
+    ($ch: expr, $note: expr, $vel: expr, $layer: literal) => {
+        $crate::ca!(
+            $crate::types::action::Action::Midi($crate::types::action::MidiAction::Note {
+                channel: $ch,
+                note: $note,
+                velocity: $vel,
+            }),
+            $crate::types::action::Action::LayerToggleOnly($layer)
+        )
+    };
+}
+
 /// Create a MIDI note action (channel is a wmidi::Channel).
 #[macro_export]
 macro_rules! mn {
@@ -323,7 +341,11 @@ mod tests {
     fn test_midi_note_macro_defaults() {
         let action = mn!(wmidi::Channel::Ch1, wmidi::Note::C4);
         match action {
-            KeyAction::Single(Action::Midi(MidiAction::Note { channel, note, velocity })) => {
+            KeyAction::Single(Action::Midi(MidiAction::Note {
+                channel,
+                note,
+                velocity,
+            })) => {
                 assert_eq!(channel, wmidi::Channel::Ch1);
                 assert_eq!(note, wmidi::Note::C4);
                 assert_eq!(u8::from(velocity), 64);
@@ -361,6 +383,53 @@ mod tests {
                 assert_eq!(delta, -7);
             }
             _ => panic!("expected midi cc step action"),
+        }
+    }
+
+    #[test]
+    fn test_midi_note_layer_toggle_only_macro_defaults() {
+        let action = mnto!(wmidi::Channel::Ch1, wmidi::Note::C4, 3);
+        match action {
+            KeyAction::Composite(
+                Action::Midi(MidiAction::Note {
+                    channel,
+                    note,
+                    velocity,
+                }),
+                Action::LayerToggleOnly(layer),
+            ) => {
+                assert_eq!(channel, wmidi::Channel::Ch1);
+                assert_eq!(note, wmidi::Note::C4);
+                assert_eq!(u8::from(velocity), 64);
+                assert_eq!(layer, 3);
+            }
+            _ => panic!("expected midi note + layer toggle only composite action"),
+        }
+    }
+
+    #[test]
+    fn test_midi_note_layer_toggle_only_macro_custom_velocity() {
+        let action = mnto!(
+            wmidi::Channel::Ch2,
+            wmidi::Note::D4,
+            wmidi::Velocity::MAX,
+            5
+        );
+        match action {
+            KeyAction::Composite(
+                Action::Midi(MidiAction::Note {
+                    channel,
+                    note,
+                    velocity,
+                }),
+                Action::LayerToggleOnly(layer),
+            ) => {
+                assert_eq!(channel, wmidi::Channel::Ch2);
+                assert_eq!(note, wmidi::Note::D4);
+                assert_eq!(velocity, wmidi::Velocity::MAX);
+                assert_eq!(layer, 5);
+            }
+            _ => panic!("expected midi note + layer toggle only composite action"),
         }
     }
 }

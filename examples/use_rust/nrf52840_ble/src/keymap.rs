@@ -1,5 +1,6 @@
 use rmk::types::action::{EncoderAction, KeyAction};
-use rmk::{encoder, k, layer, mccd, mcci, mn, mo, mto};
+use rmk::types::modifier::ModifierCombination;
+use rmk::{encoder, k, layer, mccd, mcci, mn, mnto, mo, mto, wm};
 use wmidi;
 use wmidi::Channel::Ch1;
 use wmidi::ControlFunction as MidiCC;
@@ -7,7 +8,7 @@ use wmidi::Note::{A4, Ab4, Bb4, C4, C5, D4, D5, Db4, Db5, E4, Eb4, F4, G4, Gb4};
 use wmidi::Velocity;
 pub(crate) const COL: usize = 4;
 pub(crate) const ROW: usize = 6;
-pub(crate) const NUM_LAYER: usize = 6;
+pub(crate) const NUM_LAYER: usize = 8;
 pub(crate) const NUM_ENCODER: usize = 8;
 
 const DEFAULT_CC_INCREMENT: i8 = 1i8;
@@ -22,7 +23,7 @@ pub const fn get_default_keymap() -> [[[KeyAction; COL]; ROW]; NUM_LAYER] {
             [k!(Kc1), k!(Kc2), k!(Kc3), k!(Kc4)],
             [k!(Q), k!(W), k!(E), k!(R)],
             [mto!(0, 0), mto!(1, 2), mto!(2, 4), mn!(Ch1, C4, Velocity::MAX)],
-            [mo!(1), k!(Space), k!(Right), k!(N)]
+            [mo!(1), k!(Space), k!(RightBracket), k!(N)]
         ]),
         // Sample Modifier layer
         layer!([
@@ -31,7 +32,7 @@ pub const fn get_default_keymap() -> [[[KeyAction; COL]; ROW]; NUM_LAYER] {
             [k!(No), k!(No), k!(No), k!(No)],
             [k!(No), k!(No), k!(No), k!(No)],
             [k!(Z), k!(Z), k!(Z), k!(Backspace)],
-            [k!(No), k!(Kc0), k!(Left), k!(B)]
+            [k!(No), k!(Kc0), k!(LeftBracket), k!(B)]
         ]),
         // Sequence Layer
         layer!([
@@ -40,16 +41,16 @@ pub const fn get_default_keymap() -> [[[KeyAction; COL]; ROW]; NUM_LAYER] {
             [k!(Kc1), k!(Kc2), k!(Kc3), k!(Kc4)],
             [k!(Q), k!(W), k!(E), k!(R)],
             [mto!(0, 0), mto!(1, 2), mto!(2, 4), mn!(Ch1, C4, Velocity::MAX)],
-            [mo!(3), k!(Space), k!(Right), k!(N)]
+            [mo!(3), k!(Space), k!(RightBracket), k!(N)]
         ]),
         // Sequence Modifier Layer
         layer!([
             [mn!(Ch1, G4, Velocity::MAX), mn!(Ch1, Ab4, Velocity::MAX), k!(Equal), k!(Minus)],
-            [mn!(Ch1, A4, Velocity::MAX), k!(Z), k!(X), k!(No)],
+            [mnto!(Ch1, A4, Velocity::MAX, 6), k!(No), k!(No), k!(No)],
             [k!(Y), k!(U), k!(I), k!(O)],
             [k!(H), k!(J), k!(K), k!(L)],
             [k!(No), k!(No), k!(No), mn!(Ch1, C4, Velocity::MAX)],
-            [k!(No), k!(Space), k!(Right), k!(N)]
+            [k!(No), k!(Space), k!(LeftBracket), k!(N)]
         ]),
         // Perform layer
         layer!([
@@ -58,7 +59,7 @@ pub const fn get_default_keymap() -> [[[KeyAction; COL]; ROW]; NUM_LAYER] {
             [k!(Y), k!(U), k!(I), k!(O)],
             [k!(H), k!(J), k!(K), k!(L)],
             [mto!(0, 0), mto!(1, 2), mto!(2, 4), mn!(Ch1, C4, Velocity::MAX)],
-            [mo!(5), k!(Space), k!(Right), k!(N)]
+            [mo!(5), k!(Space), wm!(RightBracket, ModifierCombination::new_from(false, false, false, true, false)), k!(N)]
         ]),
         // Perform Modifier layer
         layer!([
@@ -67,7 +68,24 @@ pub const fn get_default_keymap() -> [[[KeyAction; COL]; ROW]; NUM_LAYER] {
             [k!(No), k!(No), k!(No), k!(No)],
             [k!(No), k!(No), k!(No), k!(No)],
             [mto!(0, 0), mto!(1, 2), mto!(2, 4), mn!(Ch1, C4, Velocity::MAX)],
-            [k!(No), k!(Space), k!(Right), k!(N)]
+            [k!(No), k!(Space), wm!(LeftBracket, ModifierCombination::new_from(false, false, false, true, false)), k!(N)]
+        ]),
+        // keyboard mode layer
+        layer!([
+            [k!(D), k!(F), k!(T), k!(G)],
+            [k!(A), k!(W), k!(S), k!(E)],
+            [k!(K), k!(O), k!(L), k!(P)],
+            [k!(Y), k!(H), k!(U), k!(J)],
+            [k!(No), k!(No), k!(No), k!(No)],
+            [mo!(7), k!(No), k!(No), k!(No)]
+        ]),
+        layer!([
+            [k!(No), k!(No), k!(No), k!(No)],
+            [mnto!(Ch1, A4, Velocity::MAX, 2), k!(Z), k!(X), k!(No)],
+            [k!(No), k!(No), k!(No), k!(No)],
+            [k!(No), k!(No), k!(No), k!(No)],
+            [k!(No), k!(No), k!(No), k!(No)],
+            [k!(No), k!(No), k!(No), k!(No)]
         ]),
     ]
 }
@@ -230,6 +248,27 @@ pub const fn get_default_encoder_map() -> [[EncoderAction; NUM_ENCODER]; NUM_LAY
                 mcci!(Ch1, MidiCC::UNDEFINED_23, DEFAULT_CC_INCREMENT),
                 mccd!(Ch1, MidiCC::UNDEFINED_23, DEFAULT_CC_INCREMENT)
             ),
+        ],
+        // No-op keyboard layer
+        [
+            encoder!(k!(No), k!(No)),
+            encoder!(k!(No), k!(No)),
+            encoder!(k!(No), k!(No)),
+            encoder!(k!(No), k!(No)),
+            encoder!(k!(No), k!(No)),
+            encoder!(k!(No), k!(No)),
+            encoder!(k!(No), k!(No)),
+            encoder!(k!(No), k!(No)),
+        ],
+        [
+            encoder!(k!(No), k!(No)),
+            encoder!(k!(No), k!(No)),
+            encoder!(k!(No), k!(No)),
+            encoder!(k!(No), k!(No)),
+            encoder!(k!(No), k!(No)),
+            encoder!(k!(No), k!(No)),
+            encoder!(k!(No), k!(No)),
+            encoder!(k!(No), k!(No)),
         ],
     ]
 }
